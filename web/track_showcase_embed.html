@@ -127,7 +127,9 @@
       
       // Transparent background
       clear();
-      
+      noFill();
+      stroke(255);
+      strokeWeight(1);
       frameRate(60);
       lastTrackChange = millis();
       
@@ -139,7 +141,8 @@
     window.draw = function() {
       // Transparent background
       clear();
-      
+      noFill();
+
       updateTrackCycle();
       
       if (currentTrack) {
