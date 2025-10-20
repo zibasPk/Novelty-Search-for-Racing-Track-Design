@@ -19,7 +19,7 @@ async function writeJsonFile(jsonFilePath, jsonContent) {
   console.log(`JSON file saved at: ${jsonFilePath}`);
 }
 
-export async function savePointsToJson(seed, dataSet, selectedCells = [], splineVector = []) {
+export async function savePointsToJson(seed, dataSet, mode = null, selectedCells = [], splineVector = []) {
   const jsonFileName = `${seed}.json`;
   const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
 
@@ -41,7 +41,7 @@ export async function savePointsToJson(seed, dataSet, selectedCells = [], spline
   } else {
     jsonContent = {
       id: seed,
-      mode: null,
+      mode: mode,
       trackSize: selectedCells.length,
       fitness: null,
       dataSet: dataSet.map(point => ({
@@ -64,29 +64,30 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
   const suffix = `${Date.now()}`;
   //Use _${suffix}.json`; to have unique JSON 
 
-    const fitnessFileName = `${seed}.json`;
-    const fitnessFilePath = path.join(OUTPUT_DIR_FIT, fitnessFileName);
+  const fitnessFileName = `${seed}.json`;
+  const fitnessFilePath = path.join(OUTPUT_DIR_FIT, fitnessFileName);
 
   // Attempt to read the original points file (without suffix) to get its dataSet and selectedCells.
   const pointsFileName = `${seed}.json`;
   const pointsFilePath = path.join(OUTPUT_DIR, pointsFileName);
   let originalPoints = await readJsonFile(pointsFilePath);
 
-    // If the points file doesn't exist, default to empty arrays.
-    if (!originalPoints) {
-        originalPoints = {
-            dataSet: [],
-            selectedCells: []
-        };
-    }
-    else {
-        // delete the original points file
-        await fs
-            .unlink(pointsFilePath)
-            .then(() => {
-                console.log(`Deleted original points file: ${pointsFilePath}`)
-            });
-    }
+  // If the points file doesn't exist, default to empty arrays.
+  if (!originalPoints) {
+    originalPoints = {
+      dataSet: [],
+      selectedCells: []
+    };
+  }
+  else {
+    // delete the original points file
+    await fs
+      .unlink(pointsFilePath)
+      .then(() => {
+        console.log(`Deleted original points file: ${pointsFilePath}`)
+      });
+  }
+
 
   // Build the fitness JSON content. This object includes the new fitness fields
   // and the dataSet and selectedCells read from the original points file.
@@ -120,7 +121,7 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
     splineVector: originalPoints.splineVector || []
   };
 
-    // Save the fitness JSON to the unique file.
-    await writeJsonFile(fitnessFilePath, jsonContent);
+  // Save the fitness JSON to the unique file.
+  await writeJsonFile(fitnessFilePath, jsonContent);
 
 }
