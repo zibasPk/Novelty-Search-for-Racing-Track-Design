@@ -2,6 +2,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { OUTPUT_DIR } from './constants.js';
+import { OUTPUT_DIR_FIT } from './constants.js';
 
 async function readJsonFile(jsonFilePath) {
   try {
@@ -63,21 +64,29 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
   const suffix = `${Date.now()}`;
   //Use _${suffix}.json`; to have unique JSON 
 
-  const fitnessFileName = `${seed}.json`;
-  const fitnessFilePath = path.join(OUTPUT_DIR, fitnessFileName);
+    const fitnessFileName = `${seed}.json`;
+    const fitnessFilePath = path.join(OUTPUT_DIR_FIT, fitnessFileName);
 
   // Attempt to read the original points file (without suffix) to get its dataSet and selectedCells.
   const pointsFileName = `${seed}.json`;
   const pointsFilePath = path.join(OUTPUT_DIR, pointsFileName);
   let originalPoints = await readJsonFile(pointsFilePath);
 
-  // If the points file doesn't exist, default to empty arrays.
-  if (!originalPoints) {
-    originalPoints = {
-      dataSet: [],
-      selectedCells: []
-    };
-  }
+    // If the points file doesn't exist, default to empty arrays.
+    if (!originalPoints) {
+        originalPoints = {
+            dataSet: [],
+            selectedCells: []
+        };
+    }
+    else {
+        // delete the original points file
+        await fs
+            .unlink(pointsFilePath)
+            .then(() => {
+                console.log(`Deleted original points file: ${pointsFilePath}`)
+            });
+    }
 
   // Build the fitness JSON content. This object includes the new fitness fields
   // and the dataSet and selectedCells read from the original points file.
@@ -111,6 +120,7 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
     splineVector: originalPoints.splineVector || []
   };
 
-  // Save the fitness JSON to the unique file.
-  await writeJsonFile(fitnessFilePath, jsonContent);
+    // Save the fitness JSON to the unique file.
+    await writeJsonFile(fitnessFilePath, jsonContent);
+
 }

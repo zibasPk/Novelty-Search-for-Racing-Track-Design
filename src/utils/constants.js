@@ -7,6 +7,7 @@ export const DOCKER_IMAGE_NAME = 'torcs';
 export const MAPELITE_PATH = '../utils/mapelite.xml';
 export const MEMORY_LIMIT = '2000m';
 export const OUTPUT_DIR = '../data/convexHull'
+export const OUTPUT_DIR_FIT = '../data/convexHull/fitted';
 export const JSON_DEBUG = true;
 export const SIMULATION_TIMEOUT = 60000;
 
