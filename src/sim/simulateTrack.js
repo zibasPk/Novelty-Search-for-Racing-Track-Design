@@ -13,6 +13,7 @@ import {
   MEMORY_LIMIT,
   SIMULATION_TIMEOUT,
 } from '../utils/constants.js';
+import { start } from 'repl';
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
@@ -42,13 +43,11 @@ export async function simulate(
     if (mode === 'voronoi') {
       if (selected.length > 0) {
         trackSize = selected.length;
-      } 
+      }
     } else {
       trackSize = 50;
     }
   }
-
-
   /* 
   // Generate initial track
   let initialTrack = await generateTrack(mode, BBOX, seed, trackSize, true, dataSet, selected);
@@ -78,7 +77,11 @@ export async function simulate(
 
   let containerId;
   try {
+    let dockerStartTime = Date.now();
     containerId = await startDockerContainer();
+    let dockerEndTime = Date.now();
+    console.log(`Docker container startup time: ${(dockerEndTime - dockerStartTime) / 1000} seconds`);
+
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
     console.log(trackGenOutput);
 
@@ -172,7 +175,10 @@ export async function simulate(
     throw err;
   } finally {
     if (containerId) {
+      let startTime = Date.now();
       await stopDockerContainer(containerId);
+      let endTime = Date.now();
+      console.log(`Docker container stop time: ${(endTime - startTime) / 1000} seconds`);
     }
   }
 }
