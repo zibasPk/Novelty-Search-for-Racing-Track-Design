@@ -7,6 +7,8 @@ web/src
 
 .vscode/
 
+venv/
+
 mapelite/first_test/
 
 src/data/tests/
