@@ -38,9 +38,9 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 	let splineVector = utils.resamplePoints(splineTrack)
 	if (saveJSON) {
 		if (mode === 'voronoi')
-			savePointsToJson({ seed, dataSet: trackGenerator.dataSet, mode, selectedCells: trackGenerator.selectedCells, splineVector });
+			savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector );
 		else
-			savePointsToJson({ seed, dataSet: trackGenerator.dataSet, mode, selectedCells: [], splineVector });
+			savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector );
 	}
 
 	return { track: splineTrack, generator: trackGenerator, splineVector: splineVector };

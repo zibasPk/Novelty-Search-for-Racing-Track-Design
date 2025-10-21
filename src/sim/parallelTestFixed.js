@@ -3,12 +3,15 @@
 
 import { simulate } from './simulateTrack.js';
 import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
-import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
+import { SimulationTimeoutError } from '../utils/errors.js';
 
 const STARTING_SEED = 0;
 const TOTAL_UNIQUE_TRACKS = 2000;
 const REPETITIONS_PER_TRACK = 1;
 const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
+
+
+let timedOutSeeds = new Set();
 
 async function runSimulation(simulationIndex) {
   try {
@@ -21,12 +24,7 @@ async function runSimulation(simulationIndex) {
     const trackSize = (simulationIndex % 8) + 1;
 
     // Run the simulation
-    const { fitness } = await Promise.race([
-      simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Simulation timeout')), SIMULATION_TIMEOUT)
-      )
-    ]);
+    const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false);
 
     console.log(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
     let endTime = Date.now();
@@ -34,7 +32,10 @@ async function runSimulation(simulationIndex) {
     return fitness;
   } catch (error) {
     console.error(`Error in simulation ${simulationIndex}: ${error.message}`);
-  }
+    if (error instanceof SimulationTimeoutError) {
+      timedOutSeeds.add(simulationIndex);
+    }
+  } 
 }
 
 async function runSimulations() {
@@ -50,6 +51,9 @@ async function runSimulations() {
   await Promise.all(simulationPromises); // Await any remaining simulations
   const endTime = Date.now();
   console.log(`All simulations completed in ${(endTime - startTime) / 1000} seconds`);
+  if (timedOutSeeds.size > 0) {
+    console.log(`Simulations timed out for seeds: ${Array.from(timedOutSeeds).join(', ')}`);
+  }
 }
 
 

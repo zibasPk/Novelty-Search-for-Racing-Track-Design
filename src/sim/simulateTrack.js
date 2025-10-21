@@ -12,8 +12,11 @@ import {
   DOCKER_IMAGE_NAME,
   MEMORY_LIMIT,
   SIMULATION_TIMEOUT,
+  OUTPUT_DIR_XML
 } from '../utils/constants.js';
 import { start } from 'repl';
+import { SimulationTimeoutError } from '../utils/errors.js';
+
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
@@ -65,23 +68,24 @@ export async function simulate(
   const trackResults = await generateTrack(mode, BBOX, seed, trackSize, false, mutatedData.ds, mutatedData.sel || mutatedData.hull);
   */
 
+  // generate track json
   const trackResults = await generateTrack(
     mode, BBOX, seed, trackSize,
     saveJson, dataSet, selected
   );
 
+  // translate to XML for TORCS
   const trackXml = xml.exportTrackToXML(trackResults.track);
   console.log(`SEED: ${seed}`);
   console.log(`MODE: ${mode}`);
   console.log(`trackSize: ${trackSize}`);
 
   let containerId;
+  let timeoutId;
   try {
-    let dockerStartTime = Date.now();
-    containerId = await startDockerContainer();
-    let dockerEndTime = Date.now();
-    console.log(`Docker container startup time: ${(dockerEndTime - dockerStartTime) / 1000} seconds`);
-
+    containerId = await startDockerContainer(seed);
+   
+    // Move track XML to Docker container and generate track files
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
     console.log(trackGenOutput);
 
@@ -89,9 +93,10 @@ export async function simulate(
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Simulation timeout')), SIMULATION_TIMEOUT)
+        timeoutId = setTimeout(() => reject(new SimulationTimeoutError()), SIMULATION_TIMEOUT)
       )
     ]);
+  
     let rawMetrics = {};
     const jsonStart = simulationOutput.indexOf('===FINAL_JSON_START===');
     const jsonEnd = simulationOutput.indexOf('===FINAL_JSON_END===', jsonStart);
@@ -174,18 +179,17 @@ export async function simulate(
     console.error(`Error: ${err.message}`);
     throw err;
   } finally {
+    clearTimeout(timeoutId);
     if (containerId) {
-      let startTime = Date.now();
       await stopDockerContainer(containerId);
-      let endTime = Date.now();
-      console.log(`Docker container stop time: ${(endTime - startTime) / 1000} seconds`);
     }
   }
 }
 
-async function startDockerContainer() {
+async function startDockerContainer(seed) {
+  let containterName = "track_simulation_" + seed;
   const containerId = await executeCommand(
-    `docker run -d -it --memory ${MEMORY_LIMIT} ${DOCKER_IMAGE_NAME}`
+    `docker run -d -it --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME}`
   );
   console.log(`Docker container started with ID: ${containerId}`);
   await executeCommand(
@@ -206,7 +210,13 @@ async function stopDockerContainer(containerId) {
 async function generateAndMoveTrackFiles(containerId, trackXml, seed) {
   const tmpDir = os.tmpdir();
   const tmpFilePath = path.join(tmpDir, `${seed}.xml`);
+  const xmlDir = OUTPUT_DIR_XML;
   await fs.writeFile(tmpFilePath, trackXml);
+
+  // test section to save xml files locally
+  await fs.mkdir(xmlDir, { recursive: true });
+  await fs.writeFile(path.join(xmlDir, `${seed}.xml`), trackXml);
+
   try {
     await executeCommand(
       `docker cp ${tmpFilePath} ` +

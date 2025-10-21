@@ -13,6 +13,7 @@ mapelite/first_test/
 
 src/data/tests/
 
+*.xml
 *.json
 !package.json
 *.pkl
