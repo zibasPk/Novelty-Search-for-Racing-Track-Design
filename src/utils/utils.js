@@ -11,7 +11,12 @@ export function splineSmoothing(spline) {
   return spline;
 }
 
-//return MIDDLE point of segment with minimum curvature (most straight)
+/**
+ * Find the segment with the minimum curvature in the track.
+ * @param {*} track 
+ * @param {*} segmentLength 
+ * @returns The index of the middle point of the segment with minimum curvature. 
+ */
 export function findMinCurvatureSegment(track, segmentLength) {
   let minAverageCurvature = Infinity;
   let minSegmentStartIndex = 0;

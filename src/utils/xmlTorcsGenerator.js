@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as utils from './utils.js';
+import { OUTPUT_DIR_XML } from './constants.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,7 @@ let xml = '';
 
 //return XML data ready for trackGen parsing  
 // saveXMLalsoLocally is used for testing, it prints at local level the XML as "output.xml"
-export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = false) {
+export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = false, trackName = 'default') {
   xml = '';
   let previousLength = 0;
   const threshold = 0.001;
@@ -54,11 +55,12 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
   const finalTrackOutput = XML_TRACK_HEADER + xml + CLOSING_XML
 
   if (saveXMLalsoLocally) {
-    fs.writeFile('output.xml', finalTrackOutput, (err) => {
-      if (err) {
-        console.error('Failed to save XML:', err);
-      }
-    });
+    try {
+      fs.mkdirSync(OUTPUT_DIR_XML, { recursive: true });
+      fs.writeFileSync(path.join(OUTPUT_DIR_XML, `output_${trackName}.xml`), finalTrackOutput, 'utf8');
+    } catch (err) {
+      console.error('Error creating directory or saving XML:', err);
+    }
   }
 
   return finalTrackOutput;
