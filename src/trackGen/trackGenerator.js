@@ -28,7 +28,8 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 			throw new Error('Invalid track generator mode');
 	}
 
-	let splineTrack = utils.splineSmoothing(trackGenerator.trackEdges);
+	// let splineTrack = utils.splineSmoothing(trackGenerator.trackEdges);
+	let splineTrack = utils.splineSmoothingWithStraights(trackGenerator.trackEdges);
 
 	//process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
 	const segmentLength = 10;
@@ -38,7 +39,7 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 	let splineVector = utils.resamplePoints(splineTrack)
 	if (saveJSON) {
 		if (mode === 'voronoi')
-			savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector );
+			savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector);
 		else
 			savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector );
 	}

@@ -11,6 +11,82 @@ export function splineSmoothing(spline) {
   return spline;
 }
 
+export function splineSmoothingWithStraights(spline, minStraightLength = 5, maxCurvature = 0.01) {
+  let smoothSpline = splineSmoothing(spline);
+  let resultSpline = smoothSpline;
+  let segment = {
+    start: 0,
+    end: 2,
+    length: function (trackLength) {
+      if (this.end >= this.start) {
+        return this.end - this.start + 1;
+      }
+      return trackLength - this.start + this.end + 1;
+    }
+  };
+
+  let totalCurvature = 0;
+  let firstStraightIdx = -1;
+
+  let straightenedSegments = 0;
+
+  let i = 0;
+  let trackLength = smoothSpline.length;
+  let loopEnd = trackLength - 2;
+  while(i < loopEnd) {
+    const index = i % trackLength;
+    const curvature = calculateCurvature(smoothSpline, index);
+    totalCurvature += curvature;
+    segment.end = (index + 2) % trackLength;
+
+    if (totalCurvature / segment.length(trackLength) > maxCurvature) {
+      const prevSegLen = segment.length(trackLength) - 1;
+      if (prevSegLen > minStraightLength) {
+        // straighten segment up to previous point
+        resultSpline = straightenSegment(resultSpline, segment.start, prevSegLen);
+        straightenedSegments++;
+        console.log("straightened a segment of length: ", prevSegLen);
+        if (firstStraightIdx === -1) {
+          // store first straight segment index for later adjustments
+          firstStraightIdx = segment.start;
+          loopEnd = trackLength + firstStraightIdx;
+        }
+        // reset segment
+        segment.start = segment.end;
+      } else {
+        segment.start = index;
+      }
+      totalCurvature = 0;
+    }
+    i++;
+  }
+  console.log("Total straightened segments: ", straightenedSegments);
+
+  return resultSpline;
+}
+
+function straightenSegment(spline, startIndex, segmentLength) {
+  const trackLength = spline.length;
+  const endIndex = (startIndex + segmentLength) % trackLength;
+
+  // Calculate the direction vector for the straight segment
+  const startPoint = spline[startIndex];
+  const endPoint = spline[endIndex];
+  const dx = (endPoint.x - startPoint.x) / segmentLength;
+  const dy = (endPoint.y - startPoint.y) / segmentLength;
+
+  // Adjust points in the segment to align linearly
+  for (let i = 0; i < segmentLength; i++) {
+    const index = (startIndex + i) % trackLength;
+    spline[index] = {
+      x: startPoint.x + i * dx,
+      y: startPoint.y + i * dy
+    };
+  }
+
+  return spline;
+}
+
 /**
  * Find the segment with the minimum curvature in the track.
  * @param {*} track 
@@ -85,7 +161,12 @@ export function findMaxCurveBeforeStraight(track, segmentLength) {
 }
 
 
-
+/**
+ * Calculate curvature of a sequence of three points in the track starting at index i.
+ * @param {*} track 
+ * @param {*} i 
+ * @returns 
+ */
 export function calculateCurvature(track, i) {
   const current = track[i];
   const next = track[(i + 1) % track.length];
@@ -135,6 +216,12 @@ export function calculateCurve(p1, p2, p3) {
   return { dir, radius, angle: theta };
 }
 
+/**
+ * Push apart points that are too close to each other.
+ * @param {*} points 
+ * @param {*} minDistance 
+ * @returns 
+ */
 export function pushApart(points, minDistance = 5) {
   const minDistanceSquared = minDistance * minDistance;
   let i = 0;
@@ -156,7 +243,11 @@ export function pushApart(points, minDistance = 5) {
   }
   return points;
 }
-
+/**
+ * Fix angles that are too sharp by limiting the angle between consecutive segments.
+ * @param {*} points 
+ * @returns 
+ */
 export function fixAngles(points) {
   const radDeg = 180 / Math.PI;
   const degRad = Math.PI / 180;

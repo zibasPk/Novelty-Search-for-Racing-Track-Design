@@ -78,7 +78,7 @@ export async function simulate(
   // find index of straightest segment
   const straightIdx = findMinCurvatureSegment(trackResults.track, 30);
   // translate to XML for TORCS
-  const trackXml = xml.exportTrackToXML(trackResults.track, straightIdx, true, seed);
+  const trackXml = xml.exportTrackToXML(trackResults.track, 0, true, seed);
   console.log(`SEED: ${seed}`);
   console.log(`MODE: ${mode}`);
   console.log(`trackSize: ${trackSize}`);
