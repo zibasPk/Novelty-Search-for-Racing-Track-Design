@@ -31,7 +31,9 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
 
     curvature = utils.calculateCurvature(track, i);
     if (curvature < threshold) {
+      const segmentLength = utils.calculateSegment(current, nextNext);
       previousLength += segmentLength;
+      index++;
     } else {
       if (previousLength > 0) {
         addSection(segmentNumber, 'straight', previousLength, null);
