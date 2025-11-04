@@ -14,9 +14,7 @@ import {
   SIMULATION_TIMEOUT,
   OUTPUT_DIR_XML
 } from '../utils/constants.js';
-import { start } from 'repl';
 import { SimulationTimeoutError } from '../utils/errors.js';
-import { findMinCurvatureSegment } from '../utils/utils.js';
 
 
 const executeCommand = (command) => {
@@ -75,8 +73,6 @@ export async function simulate(
     saveJson, dataSet, selected
   );
 
-  // find index of straightest segment
-  const straightIdx = findMinCurvatureSegment(trackResults.track, 30);
   // translate to XML for TORCS
   const trackXml = xml.exportTrackToXML(trackResults.track, 0, true, seed);
   console.log(`SEED: ${seed}`);
