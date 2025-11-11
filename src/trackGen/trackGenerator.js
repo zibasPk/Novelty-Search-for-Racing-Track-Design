@@ -2,6 +2,7 @@ import { VoronoiTrackGenerator } from './voronoiTrackGenerator.js';
 import { ConvexHullTrackGenerator } from './convexHullTrackGenerator.js';
 import * as utils from '../utils/utils.js';
 import { JSON_DEBUG } from '../utils/constants.js';
+import log from "loglevel"
 
 let trackGenerator;
 let savePointsToJson;
@@ -28,12 +29,14 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 			throw new Error('Invalid track generator mode');
 	}
 
+	// let splineTrack = trackGenerator.trackEdges;
 	let splineTrack = utils.splineSmoothing(trackGenerator.trackEdges);
+	// let splineTrack = utils.splineSmoothingWithStraights(trackGenerator.trackEdges);
 
 	//process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
-	const segmentLength = 10;
-	const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
-	splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
+	// const segmentLength = 10;
+	// const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
+	// splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
 
 	let splineVector = utils.resamplePoints(splineTrack)
 	if (saveJSON) {

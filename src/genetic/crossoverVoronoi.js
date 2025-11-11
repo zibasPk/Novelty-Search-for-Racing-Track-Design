@@ -1,4 +1,5 @@
 import { BBOX, NUMBER_OF_VORONOI_SITES, MAX_NUMBER_OF_SELECTED_CELLS } from "../utils/constants.js"
+import log from "loglevel"
 
 export function crossover(parent1, parent2, regularize = false) {
   // Extract dataset from each parent
@@ -121,7 +122,7 @@ export function crossover2(parent1, parent2, regularize = false) {
     const averageLength = Math.floor((parentSelected1.length + parentSelected2.length + 1) / 2);
     // Ensure the total number of selected cells does not exceed the original length
     const maxCells = Math.min(averageLength, MAX_NUMBER_OF_SELECTED_CELLS);
-    console.log("averageLength: ", averageLength);
+    log.debug("averageLength: ", averageLength);
     while ((parentSelected1.length + parentSelected2.length) > maxCells) {
       if (parentSelected1.length > parentSelected2.length) {
         parentSelected1.pop();

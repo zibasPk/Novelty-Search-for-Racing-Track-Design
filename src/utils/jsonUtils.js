@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { OUTPUT_DIR, OUTPUT_DIR_JSON } from './constants.js';
 import { OUTPUT_DIR_FIT } from './constants.js';
+import log from "loglevel"
 
 async function readJsonFile(jsonFilePath) {
   try {
@@ -16,7 +17,7 @@ async function readJsonFile(jsonFilePath) {
 async function writeJsonFile(jsonFilePath, jsonContent) {
   await fs.mkdir(path.dirname(jsonFilePath), { recursive: true });
   await fs.writeFile(jsonFilePath, JSON.stringify(jsonContent, null, 2));
-  console.log(`JSON file saved at: ${jsonFilePath}`);
+  log.debug(`JSON file saved at: ${jsonFilePath}`);
 }
 
 export async function savePointsToJson(seed, dataSet, mode = null, selectedCells = [], splineVector = []) {
@@ -84,7 +85,7 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
     await fs
       .unlink(pointsFilePath)
       .then(() => {
-        console.log(`Deleted original points file: ${pointsFilePath}`)
+        log.debug(`Deleted original points file: ${pointsFilePath}`)
       });
   }
 

@@ -5,6 +5,7 @@ import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull
 import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
 import { BBOX, JSON_DEBUG } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
+import log from "loglevel"
 
 const app = express();
 app.use(express.json());
@@ -64,10 +65,10 @@ app.post('/evaluate', async (req, res) => {
       fitness: simulationResult.fitness,
       splineVector: simulationResult.splineVector
     });
-    console.log('Returning fitness from /evaluate: ',
+    log.info('Returning fitness from /evaluate: ',
       JSON.stringify(simulationResult.fitness));
   } catch (error) {
-    console.error('Error in /evaluate:', error);
+    log.error('Error in /evaluate:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -76,7 +77,7 @@ app.post('/evaluate', async (req, res) => {
    /crossover
    ──────────────────────────────────────────────────────────── */
 app.post('/crossover', async (req, res, next) => {
-  console.log('Crossover endpoint called');
+  log.info('Crossover endpoint called');
   try {
     const { parent1, parent2, mode } = req.body;
     if (!parent1 || !parent2 ||
@@ -119,20 +120,20 @@ app.post('/crossover', async (req, res, next) => {
     const trackGenerator2 = result2.generator;
 
     if (mode === 'voronoi') {
-      console.log('CROSSOVER VORONOI');
+      log.debug('CROSSOVER VORONOI');
       try {
         const result = Math.random() < 0 //mix between two crossovers , 0.5 to balance, 1 for only crossover method 1 , 0 only method 2 
           ? crossover(trackGenerator1, trackGenerator2, true)
           : crossover2(trackGenerator2, trackGenerator1, true);
 
-        console.log("Dataset lenght: ", result.ds.length);
-        console.log("Selected cells lenght: ", result.sel.length);
+        log.debug("Dataset lenght: ", result.ds.length);
+        log.debug("Selected cells lenght: ", result.sel.length);
 
         return res.json({ offspring: { ds: result.ds, sel: result.sel } });
       } catch (err) {
-        console.error('Error during crossover:', err);
-        console.log('Parent 1:', JSON.stringify(parent1, null, 2));
-        console.log('Parent 2:', JSON.stringify(parent2, null, 2));
+        log.error('Error during crossover:', err);
+        log.error('Parent 1:', JSON.stringify(parent1, null, 2));
+        log.error('Parent 2:', JSON.stringify(parent2, null, 2));
         return res.status(500).json({ error: 'Crossover failed.' });
       }
     }
@@ -190,6 +191,9 @@ app.post('/mutate', async (req, res, next) => {
   }
 });
 
+
+log.setLevel("info");
+
 /* ─────────────────────────────────────────────────────────────
    Global error handler
    ──────────────────────────────────────────────────────────── */
@@ -203,5 +207,5 @@ app.use((error, req, res, next) => {
    ──────────────────────────────────────────────────────────── */
 const PORT = 4242;
 app.listen(PORT, () => {
-  console.log(`MAP-Elites API running on port ${PORT}`);
+  log.info(`MAP-Elites API running on port ${PORT}`);
 });

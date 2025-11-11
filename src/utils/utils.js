@@ -1,4 +1,5 @@
 import { BBOX } from "./constants.js";
+import log from "loglevel"
 
 export function splineSmoothing(spline) {
   for (let i = 0; i < 10; i++) {
@@ -50,7 +51,6 @@ export function splineSmoothingWithStraights(spline, minStraightLength = 10, max
 
   let totalCurvature = 0;
   let firstStraightIdx = -1;
-
   let straightenedSegments = 0;
 
   let i = 0;
@@ -68,7 +68,7 @@ export function splineSmoothingWithStraights(spline, minStraightLength = 10, max
         // straighten segment up to previous point
         resultSpline = straightenSegment(resultSpline, segment.start, prevSegLen);
         straightenedSegments++;
-        console.log("straightened a segment of length: ", prevSegLen);
+        log.debug("straightened a segment of length: ", prevSegLen);
         if (firstStraightIdx === -1) {
           // store first straight segment index for later adjustments
           firstStraightIdx = segment.start;
@@ -83,7 +83,7 @@ export function splineSmoothingWithStraights(spline, minStraightLength = 10, max
     }
     i++;
   }
-  console.log("Total straightened segments: ", straightenedSegments);
+  log.debug("Total straightened segments: ", straightenedSegments);
 
   return resultSpline;
 }

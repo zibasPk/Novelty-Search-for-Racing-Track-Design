@@ -14,7 +14,7 @@ import {
   OUTPUT_DIR_XML
 } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
-
+import log from "loglevel";
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
@@ -74,9 +74,9 @@ export async function simulate(
 
   // translate to XML for TORCS
   const trackXml = xml.exportTrackToXML(trackResults.track, 0, true, seed);
-  console.log(`SEED: ${seed}`);
-  console.log(`MODE: ${mode}`);
-  console.log(`trackSize: ${trackSize}`);
+  log.info(`SEED: ${seed}`);
+  log.info(`MODE: ${mode}`);
+  log.info(`trackSize: ${trackSize}`);
 
   let containerId;
   let timeoutId;
@@ -85,7 +85,7 @@ export async function simulate(
    
     // Move track XML to Docker container and generate track files
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
-    console.log(trackGenOutput);
+    log.info(trackGenOutput);
 
     const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export -r 5 --json ${plot ? '' : '--plots'}`;
     const simulationOutput = await Promise.race([
@@ -189,7 +189,7 @@ async function startDockerContainer(seed) {
   const containerId = await executeCommand(
     `docker run -d -it --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME}`
   );
-  console.log(`Docker container started with ID: ${containerId}`);
+  log.info(`Docker container started with ID: ${containerId}`);
   await executeCommand(
     `docker exec ${containerId} mkdir -p /usr/local/share/games/torcs/tracks/road/output`
   );
@@ -199,7 +199,7 @@ async function startDockerContainer(seed) {
 async function stopDockerContainer(containerId) {
   try {
     await executeCommand(`docker rm --force ${containerId}`);
-    console.log(`Docker container ${containerId} stopped and removed.`);
+    log.info(`Docker container ${containerId} stopped and removed.`);
   } catch (err) {
     console.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
   }

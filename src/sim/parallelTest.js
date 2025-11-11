@@ -1,12 +1,13 @@
 import { simulate } from './simulateTrack.js';
 import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
+import log from "loglevel"
 
 const TOTAL_SIMULATIONS = 100;
 const CONCURRENCY_LIMIT = 5; // Number of parallel simulations
 
 async function runSimulation(simulationIndex) {
   try {
-    console.log(`Starting simulation ${simulationIndex}`);
+    log.info(`Starting simulation ${simulationIndex}`);
 
     // Generate random parameters for the simulation
     const mode = Math.random() < 0.5 ? 'voronoi' : 'convexHull';
@@ -21,10 +22,10 @@ async function runSimulation(simulationIndex) {
       )
     ]);
 
-    console.log(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
+    log.info(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
     return fitness;
   } catch (error) {
-    console.error(`Error in simulation ${simulationIndex}: ${error.message}`);
+    log.error(`Error in simulation ${simulationIndex}: ${error.message}`);
   }
 }
 

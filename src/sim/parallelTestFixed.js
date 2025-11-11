@@ -4,6 +4,7 @@
 import { simulate } from './simulateTrack.js';
 import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
+import log from "loglevel";
 
 const STARTING_SEED = 0;
 const TOTAL_UNIQUE_TRACKS = 2000;
@@ -15,7 +16,7 @@ let timedOutSeeds = new Set();
 
 async function runSimulation(simulationIndex) {
   try {
-    console.log(`Starting simulation ${simulationIndex}`);
+    log.info(`Starting simulation ${simulationIndex}`);
     let startTime = Date.now();
 
     // Generate random parameters for the simulation
@@ -26,12 +27,12 @@ async function runSimulation(simulationIndex) {
     // Run the simulation
     const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false);
 
-    console.log(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
+    log.info(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
     let endTime = Date.now();
-    console.log(`Simulation ${simulationIndex} execution time: ${(endTime - startTime) / 1000} seconds`);
+    log.info(`Simulation ${simulationIndex} execution time: ${(endTime - startTime) / 1000} seconds`);
     return fitness;
   } catch (error) {
-    console.error(`Error in simulation ${simulationIndex}: ${error.message}`);
+    log.error(`Error in simulation ${simulationIndex}: ${error.message}`);
     if (error instanceof SimulationTimeoutError) {
       timedOutSeeds.add(simulationIndex);
     }
@@ -50,11 +51,12 @@ async function runSimulations() {
   }
   await Promise.all(simulationPromises); // Await any remaining simulations
   const endTime = Date.now();
-  console.log(`All simulations completed in ${(endTime - startTime) / 1000} seconds`);
+  log.info(`All simulations completed in ${(endTime - startTime) / 1000} seconds`);
   if (timedOutSeeds.size > 0) {
-    console.log(`Simulations timed out for seeds: ${Array.from(timedOutSeeds).join(', ')}`);
+    log.info(`Simulations timed out for seeds: ${Array.from(timedOutSeeds).join(', ')}`);
   }
 }
 
 
+log.setLevel("debug");
 runSimulations().catch(err => console.error(`Unexpected error: ${err.message}`));

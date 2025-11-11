@@ -1,15 +1,16 @@
 import { pushApart, fixAngles, generateCatmullRomSpline } from '../utils/utils.js';
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
+import log from "loglevel";
 
 export class ConvexHullTrackGenerator {
   constructor(bbox, seed, size, dataSet = []) {
     this.bbox = bbox;
     this.size = size;
     this.randomGen = prng_alea(seed);
-    console.log(dataSet)
+    log.info(dataSet)
     this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints()
     this.dataSetHull = this.computeConvexHull()
-    console.log(this.dataSetHull)
+    log.info(this.dataSetHull)
     this.trackEdges = this.generateTrack();
   }
 
@@ -36,7 +37,7 @@ export class ConvexHullTrackGenerator {
 
   computeConvexHull() {
     if (this.dataSet.length < 3) {
-      console.log("Dataset < 3 : too few points!")
+      log.info("Dataset < 3 : too few points!")
       return;
     }
     this.dataSet.sort((a, b) => a.x - b.x || a.y - b.y);

@@ -1,16 +1,11 @@
 import {
   BBOX,
-  MODE,
-  DOCKER_IMAGE_NAME,
-  MEMORY_LIMIT,
-  SIMULATION_TIMEOUT,
-  OUTPUT_DIR_XML
 } from '../utils/constants.js';
 import { generateTrack } from '../trackGen/trackGenerator.js';
 import * as xml from '../utils/xmlTorcsGenerator.js';
-import * as utils from '../utils/utils.js';
-import { log } from 'mathjs';
+import log from "loglevel"
 
+log.setLevel("info");
 
 for(let seed = 0; seed < 100; seed++){
   let result =await generateTrack(
