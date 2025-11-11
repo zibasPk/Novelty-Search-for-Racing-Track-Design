@@ -11,12 +11,14 @@ import * as xml from '../utils/xmlTorcsGenerator.js';
 import * as utils from '../utils/utils.js';
 import { log } from 'mathjs';
 
-let result =await generateTrack(
-    "voronoi", BBOX, 1725, (1725 % 8) + 1,
-    true, [], []
-);
 
-const trackXml = xml.exportTrackToXML(result.track, 0, true, 1725);
+for(let seed = 0; seed < 20000; seed++){
+  let result =await generateTrack(
+      "voronoi", BBOX, seed, (seed % 8) + 1,
+      true, [], []
+  );
+  const trackXml = xml.exportTrackToXML(result.track, 0, true, seed);
+}
 
 // let current = {x: -1, y: 5};
 // let startOfStraight = {x: 2, y: 2};

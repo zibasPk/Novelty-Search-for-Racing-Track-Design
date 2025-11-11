@@ -195,6 +195,7 @@ export function calculateCurve(p1, p2, p3) {
   }
 
   const D = 2 * determinant(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+  
   if (D === 0) return null;
 
   const ux = ((p1.x ** 2 + p1.y ** 2) * (p2.y - p3.y) +
@@ -455,67 +456,7 @@ export function resamplePoints(points) {
   return resampled;
 }
 
-/**
- * Function to adjust track sections to fix closure errors. Could be needed to be called multiple times.
- * @param {*} sections 
- * @returns error of position and heading after correction
- */
-export function fixTrackClosure(sections) {
-  function calculateInitialPose(sections) {
-    //todo: check if the first section is a straight
-    let heading;
-    if (sections[0].type === 'straight') {
-      heading = normalizeVector({ x: sections[0].points[1].x - sections[0].points[0].x, y: sections[0].points[1].y - sections[0].points[0].y });
-    }
-    else {
-      heading = calculateCurveInitialHeading(
-        sections[0].points[0],
-        sections[0].points[2],
-        sections[0].radius,
-        sections[0].dir
-      );
-    }
-
-    // return heading converted to radians
-    return { x: 0, y: 0, heading: Math.atan2(heading.y, heading.x) };
-  }
-
-  let initialPose = calculateInitialPose(sections);
-
-  // calculate final pose
-  const finalPose = calculateFinalPose(sections, initialPose);
-  // closure error
-  const error = {
-    dx: finalPose.x,
-    dy: finalPose.y,
-    dtheta: normalizeAngle(finalPose.heading - initialPose.heading),
-  };
-  applyHeadingCorrection(sections, error.dtheta);
-
-  initialPose = calculateInitialPose(sections);
-  // recalculate final pose after correction
-  const correctedFinalPose = calculateFinalPose(sections, initialPose);
-  // check closure error after correction
-  const correctedError = {
-    dx: correctedFinalPose.x,
-    dy: correctedFinalPose.y,
-    dtheta: normalizeAngle(correctedFinalPose.heading - initialPose.heading),
-  };
-
-  applyPositionCorrection(sections, correctedError, initialPose);
-  // recalculate final pose after position correction
-  const finalCorrectedPose = calculateFinalPose(sections, { x: 0, y: 0, heading: initialPose.heading });
-  // error after all corrections
-  const finalError = {
-    dx: finalCorrectedPose.x,
-    dy: finalCorrectedPose.y,
-    dtheta: normalizeAngle(finalCorrectedPose.heading - initialPose.heading),
-  };
-
-  return finalError;
-}
-
-function calculateFinalPose(sections, startPose = { x: 0, y: 0, heading: 0 }) {
+export function calculateFinalPose(sections, startPose = { x: 0, y: 0, heading: 0 }) {
   let pose = { ...startPose };
 
   for (const s of sections) {
@@ -546,63 +487,4 @@ function calculateFinalPose(sections, startPose = { x: 0, y: 0, heading: 0 }) {
   pose.heading = ((pose.heading + Math.PI) % (2 * Math.PI)) - Math.PI;
 
   return pose;
-}
-
-function applyHeadingCorrection(sections, dtheta) {
-  const curves = sections.filter(s => s.type === 'curve');
-  if (curves.length === 0) return; // nothing to fix
-
-  const totalAbsAngle = curves.reduce((a, c) => a + Math.abs(c.angle), 0);
-  for (const c of curves) {
-    const weight = Math.abs(c.angle) / totalAbsAngle;
-    const deltaAngle = -dtheta * (180 / Math.PI) * weight; // convert rad→deg
-    c.angle += deltaAngle;
-  }
-}
-
-function applyPositionCorrection(sections, error, startPose = { x: 0, y: 0, heading: 0 }) {
-  const straights = [];
-  let pose = { ...startPose };
-
-  // collect all straights with their heading
-  for (const s of sections) {
-    if (s.type === 'straight') {
-      straights.push({ section: s, heading: pose.heading });
-      pose.x += s.length * Math.cos(pose.heading);
-      pose.y += s.length * Math.sin(pose.heading);
-    } else if (s.type === 'curve') {
-      const dirSign = s.dir === 'lft' ? 1 : -1;
-      const angRad = (s.angle * Math.PI) / 180;
-      const cx = pose.x - dirSign * s.radius * Math.sin(pose.heading);
-      const cy = pose.y + dirSign * s.radius * Math.cos(pose.heading);
-      pose.heading += dirSign * angRad;
-      pose.x = cx + dirSign * s.radius * Math.sin(pose.heading);
-      pose.y = cy - dirSign * s.radius * Math.cos(pose.heading);
-    }
-  }
-
-  if (straights.length === 0) return; // nothing to fix
-
-  // total length (for proportional weighting)
-  const totalLength = straights.reduce((a, s) => a + s.section.length, 0);
-
-  // convert closure error to vector
-  const ex = -error.dx; // we want to move back by -dx
-  const ey = -error.dy;
-
-  // distribute correction
-  for (const { section, heading } of straights) {
-    const w = section.length / totalLength;
-
-    // how much of the error projects along this straight's direction
-    const dirx = Math.cos(heading);
-    const diry = Math.sin(heading);
-    const proj = ex * dirx + ey * diry; // component along this straight
-
-    // apply proportional correction (damped)
-    const k = 1.0; // can reduce to 0.8 for smoother adjustment
-    const deltaLen = proj * w * k;
-
-    section.length += deltaLen;
-  }
 }

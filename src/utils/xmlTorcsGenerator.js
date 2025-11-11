@@ -12,15 +12,16 @@ const XML_TRACK_HEADER = fs.readFileSync(path.join(__dirname, 'startTrackTemplat
 const CLOSING_XML = "</section>\n</section>\n</params>";
 let xml = '';
 
-//return XML data ready for trackGen parsing  
+// return XML data ready for trackGen parsing  
 // saveXMLalsoLocally is used for testing, it prints at local level the XML as "output.xml"
 export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = false, trackName = 'default') {
   xml = '';
-  const threshold = 0.01;
+  const threshold = -1;
   const sections = [];
 
   let startOfStraightIdx = null;
   let endOfStraightIdx = null;
+  let nullCurveCounter = 0;
 
   for (let index = startIndex; index < startIndex + track.length - 2; index++) {
     const i = (index) % track.length;
@@ -65,6 +66,8 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
         });
 
         index++;
+      } else {
+        nullCurveCounter++;
       }
     }
   }
@@ -76,16 +79,22 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
       points: [track[startOfStraightIdx], track[endOfStraightIdx]]
     });
   }
-  
-  let error;
-  let i = 0;
-  do {
-    error = utils.fixTrackClosure(sections);
-    i++;
-    // log(`Closure correction iteration ${i}: dx=${error.dx.toFixed(4)}, dy=${error.dy.toFixed(4)}, dtheta=${error.dtheta.toFixed(6)}`);
-  } while (Math.abs(error.dx) > 0.15 || Math.abs(error.dy) > 0.15 || Math.abs(error.dtheta) > 0.005);
-  log(`Final closure error after ${i} iterations: dx=${error.dx.toFixed(4)}, dy=${error.dy.toFixed(4)}, dtheta=${error.dtheta.toFixed(6)}`);
 
+
+  let initialPose = { x: 0, y: 0, heading: 0 };
+  const finalPose = utils.calculateFinalPose(sections, initialPose);
+
+  let error = {
+    dx: finalPose.x - initialPose.x,
+    dy: finalPose.y - initialPose.y,
+    dtheta: finalPose.heading - initialPose.heading
+  };
+
+  if (error.dx > 2 || error.dy > 2|| nullCurveCounter > 0) {
+    fs.appendFileSync(path.join(OUTPUT_DIR_XML, 'closure_errors.log'),
+      `Track: ${trackName}, dx=${error.dx.toFixed(4)}, dy=${error.dy.toFixed(4)}, dtheta=${error.dtheta.toFixed(6)}, nullCurves=${nullCurveCounter}\n`
+    );
+  }
 
   sections.forEach((s, idx) => { addSection(idx, s.type, s.length, s); });
   const finalTrackOutput = XML_TRACK_HEADER + xml + CLOSING_XML;
