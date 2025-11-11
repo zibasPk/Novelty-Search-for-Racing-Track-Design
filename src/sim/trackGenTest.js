@@ -12,7 +12,7 @@ import * as utils from '../utils/utils.js';
 import { log } from 'mathjs';
 
 
-for(let seed = 0; seed < 20000; seed++){
+for(let seed = 0; seed < 100; seed++){
   let result =await generateTrack(
       "voronoi", BBOX, seed, (seed % 8) + 1,
       true, [], []

@@ -1,7 +1,7 @@
 // jsonUtils.js
 import { promises as fs } from 'fs';
 import path from 'path';
-import { OUTPUT_DIR } from './constants.js';
+import { OUTPUT_DIR, OUTPUT_DIR_JSON } from './constants.js';
 import { OUTPUT_DIR_FIT } from './constants.js';
 
 async function readJsonFile(jsonFilePath) {
@@ -21,7 +21,7 @@ async function writeJsonFile(jsonFilePath, jsonContent) {
 
 export async function savePointsToJson(seed, dataSet, mode = null, selectedCells = [], splineVector = []) {
   const jsonFileName = `${seed}.json`;
-  const jsonFilePath = path.join(OUTPUT_DIR, jsonFileName);
+  const jsonFilePath = path.join(OUTPUT_DIR_JSON, jsonFileName);
 
   let jsonContent = await readJsonFile(jsonFilePath);
   if (jsonContent) {
@@ -69,7 +69,7 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
 
   // Attempt to read the original points file (without suffix) to get its dataSet and selectedCells.
   const pointsFileName = `${seed}.json`;
-  const pointsFilePath = path.join(OUTPUT_DIR, pointsFileName);
+  const pointsFilePath = path.join(OUTPUT_DIR_JSON, pointsFileName);
   let originalPoints = await readJsonFile(pointsFilePath);
 
   // If the points file doesn't exist, default to empty arrays.

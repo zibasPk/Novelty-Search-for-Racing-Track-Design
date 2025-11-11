@@ -6,9 +6,10 @@ export const MAX_NUMBER_OF_SELECTED_CELLS = 10;
 export const DOCKER_IMAGE_NAME = 'torcs';
 export const MAPELITE_PATH = '../utils/mapelite.xml';
 export const MEMORY_LIMIT = '2000m';
-export const OUTPUT_DIR = '../data/convexHull'
-export const OUTPUT_DIR_FIT = '../data/convexHull/fitted';
-export const OUTPUT_DIR_XML = '../data/convexHull/xmlTracks';
+export const OUTPUT_DIR = '../data/voronoi'
+export const OUTPUT_DIR_JSON = OUTPUT_DIR + '/json';
+export const OUTPUT_DIR_FIT = OUTPUT_DIR + '/fitted';
+export const OUTPUT_DIR_XML = OUTPUT_DIR + '/xmlTracks';
 export const JSON_DEBUG = true;
 export const SIMULATION_TIMEOUT = 60000;
 

@@ -29,7 +29,6 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 	}
 
 	let splineTrack = utils.splineSmoothing(trackGenerator.trackEdges);
-	// let splineTrack = utils.splineSmoothingWithStraights(trackGenerator.trackEdges);
 
 	//process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
 	const segmentLength = 10;
