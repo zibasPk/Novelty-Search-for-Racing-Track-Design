@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as utils from './utils.js';
 import { OUTPUT_DIR_XML } from './constants.js';
+import log from "loglevel";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +14,19 @@ let xml = '';
 
 // return XML data ready for trackGen parsing  
 // saveXMLalsoLocally is used for testing, it prints at local level the XML as "output.xml"
+/**
+ * Generates an XML representation of a racing track based on the provided track points.
+ * The function identifies straight and curved sections of the track, calculates their parameters,
+ * and constructs the corresponding XML structure. It also checks for track closure errors
+ * and logs them if necessary.
+ * NOTE: track must have an even number of points!
+ * @param {*} track 
+ * @param {*} startIndex 
+ * @param {*} saveXMLalsoLocally 
+ * @param {*} trackName 
+ * @returns 
+ */
+
 export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = false, trackName = 'default') {
   xml = '';
   const threshold = -1;
@@ -22,14 +36,11 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
   let endOfStraightIdx = null;
   let nullCurveCounter = 0;
 
-  for (let index = startIndex; index < startIndex + track.length - 2; index++) {
-    const i = (index) % track.length;
-    const i_next = (index + 1) % track.length;
-    const i_nextnext = (index + 2) % track.length;
+  let index = startIndex;
+  while (index < startIndex + track.length - 1) {
+    const i = (index) % track.length; const i_next = (index + 1) % track.length; const i_nextnext = (index + 2) % track.length;
+    const current = track[i]; const next = track[i_next]; const nextNext = track[i_nextnext];
 
-    const current = track[i];
-    const next = track[i_next];
-    const nextNext = track[i_nextnext];
 
     const curvature = utils.calculateCurvature(track, i);
     if (curvature < threshold) {
@@ -63,14 +74,13 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
           points: [current, next, nextNext],
           center: curv.center
         });
-
         index++;
       } else {
         nullCurveCounter++;
       }
     }
+    index++;
   }
-
   if (startOfStraightIdx !== null) {
     sections.push({
       type: 'straight',
@@ -89,10 +99,11 @@ export function exportTrackToXML(track, startIndex = 0, saveXMLalsoLocally = fal
     dtheta: finalPose.heading - initialPose.heading
   };
 
-  if (error.dx > 2 || error.dy > 2|| nullCurveCounter > 0) {
+  if (error.dx > 2 || error.dy > 2 || nullCurveCounter > 0) {
     fs.appendFileSync(path.join(OUTPUT_DIR_XML, 'closure_errors.log'),
       `Track: ${trackName}, dx=${error.dx.toFixed(4)}, dy=${error.dy.toFixed(4)}, dtheta=${error.dtheta.toFixed(6)}, nullCurves=${nullCurveCounter}\n`
     );
+    log.warn(`Track closure error for ${trackName}: dx=${error.dx.toFixed(4)}, dy=${error.dy.toFixed(4)}, dtheta=${error.dtheta.toFixed(6)}, nullCurves=${nullCurveCounter}`);
   }
 
   sections.forEach((s, idx) => { addSection(idx, s.type, s.length, s); });
