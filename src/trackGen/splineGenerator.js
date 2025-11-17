@@ -1,6 +1,104 @@
 import hermite from "cubic-hermite";
 import log from "loglevel";
 
+export function cubicSplineSmoothing(spline, inTangent, outTangent) {
+  // Initial smoothing passes with fewer subdivisions
+  for (let i = 0; i < 10; i++) {
+    spline = cubicHermiteSpline(spline, null, null, 5);
+    spline = pushApart(spline, 20);
+    spline = fixAngles(spline);
+  }
+  
+  // Final pass with more subdivisions
+  spline = cubicHermiteSpline(spline, inTangent, outTangent, 20);
+  spline = pushApart(spline, 0.1);
+  
+  return spline;
+}
+
+function clampTangent(tangent, maxMagnitude) {
+  const magnitude = Math.sqrt(tangent[0] ** 2 + tangent[1] ** 2);
+  
+  if (magnitude > maxMagnitude) {
+    const scale = maxMagnitude / magnitude;
+    return [tangent[0] * scale, tangent[1] * scale];
+  }
+  
+  return tangent;
+}
+
+function calculateTangents(points, maxTangentLength = null) {
+  return points.map((point, i) => {
+    let tangent;
+    
+    if (i === 0) {
+      tangent = [points[1].x - point.x, points[1].y - point.y];
+    } else if (i === points.length - 1) {
+      tangent = [point.x - points[i - 1].x, point.y - points[i - 1].y];
+    } else {
+      tangent = [
+        (points[i + 1].x - points[i - 1].x) * 0.5,
+        (points[i + 1].y - points[i - 1].y) * 0.5
+      ];
+    }
+    
+    // Clamp tangent if max length is specified
+    return maxTangentLength !== null 
+      ? clampTangent(tangent, maxTangentLength) 
+      : tangent;
+  });
+}
+
+function getSegmentCount(p1, p2, segmentsPerCurve) {
+  if (segmentsPerCurve !== null) return segmentsPerCurve;
+  
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return Math.max(2, Math.floor(distance / 2));
+}
+
+export function cubicHermiteSpline(
+  points, 
+  inTangent = null, 
+  outTangent = null, 
+  segmentsPerCurve = null,
+  maxTangentLength = null  
+) {
+  const tangents = calculateTangents(points, maxTangentLength);
+  
+  if (inTangent) tangents[0] = inTangent;
+  if (outTangent) tangents[tangents.length - 1] = outTangent;
+  
+  // Override first and last tangents if provided
+  if (inTangent) tangents[0] = inTangent;
+  if (outTangent) tangents[tangents.length - 1] = outTangent;
+  
+  const allPoints = [];
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const segments = getSegmentCount(points[i], points[i + 1], segmentsPerCurve);
+    
+    for (let j = 0; j <= segments; j++) {
+      const t = j / segments;
+      const point = [0, 0];
+      
+      hermite(
+        [points[i].x, points[i].y],
+        tangents[i],
+        [points[i + 1].x, points[i + 1].y],
+        tangents[i + 1],
+        t,
+        point
+      );
+      
+      allPoints.push({ x: point[0], y: point[1] });
+    }
+  }
+  
+  return allPoints;
+}
+
 export function splineSmoothing(spline) {
   for (let i = 0; i < 10; i++) {
     spline = generateCatmullRomSpline(spline, 5, i * 10);
@@ -10,82 +108,6 @@ export function splineSmoothing(spline) {
   spline = generateCatmullRomSpline(spline, 20, 0);
   spline = pushApart(spline, 0.1);
   return spline;
-}
-
-export function splineSmoothingWithStraights(spline, minStraightLength = 10, maxCurvature = 0.01) {
-
-  let straightenSegment = (spline, startIndex, segmentLength) => {
-    const trackLength = spline.length;
-    const endIndex = (startIndex + segmentLength) % trackLength;
-
-    // Calculate the direction vector for the straight segment
-    const startPoint = spline[startIndex];
-    const endPoint = spline[endIndex];
-    const dx = (endPoint.x - startPoint.x) / segmentLength;
-    const dy = (endPoint.y - startPoint.y) / segmentLength;
-
-    // Adjust points in the segment to align linearly
-    for (let i = 0; i < segmentLength; i++) {
-      const index = (startIndex + i) % trackLength;
-      spline[index] = {
-        x: startPoint.x + i * dx,
-        y: startPoint.y + i * dy
-      };
-    }
-
-    return spline;
-  }
-
-  let smoothSpline = splineSmoothing(spline);
-  let resultSpline = smoothSpline;
-  let segment = {
-    start: 0,
-    end: 2,
-    length: function (trackLength) {
-      if (this.end >= this.start) {
-        return this.end - this.start + 1;
-      }
-      return trackLength - this.start + this.end + 1;
-    }
-  };
-
-  let totalCurvature = 0;
-  let firstStraightIdx = -1;
-  let straightenedSegments = 0;
-
-  let i = 0;
-  let trackLength = smoothSpline.length;
-  let loopEnd = trackLength - 2;
-  while (i < loopEnd) {
-    const index = i % trackLength;
-    const curvature = utils.calculateCurvature(smoothSpline, index);
-    totalCurvature += curvature;
-    segment.end = (index + 2) % trackLength;
-
-    if (totalCurvature / segment.length(trackLength) > maxCurvature) {
-      const prevSegLen = segment.length(trackLength) - 1;
-      if (prevSegLen > minStraightLength) {
-        // straighten segment up to previous point
-        resultSpline = straightenSegment(resultSpline, segment.start, prevSegLen);
-        straightenedSegments++;
-        log.debug("straightened a segment of length: ", prevSegLen);
-        if (firstStraightIdx === -1) {
-          // store first straight segment index for later adjustments
-          firstStraightIdx = segment.start;
-          loopEnd = trackLength + firstStraightIdx;
-        }
-        // reset segment
-        segment.start = segment.end;
-      } else {
-        segment.start = index;
-      }
-      totalCurvature = 0;
-    }
-    i++;
-  }
-  log.debug("Total straightened segments: ", straightenedSegments);
-
-  return resultSpline;
 }
 
 /**

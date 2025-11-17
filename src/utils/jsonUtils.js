@@ -20,8 +20,8 @@ async function writeJsonFile(jsonFilePath, jsonContent) {
   log.debug(`JSON file saved at: ${jsonFilePath}`);
 }
 
-export async function savePointsToJson(seed, dataSet, mode = null, selectedCells = [], splineVector = []) {
-  const jsonFileName = `${seed}.json`;
+export async function savePointsToJson(name, dataSet, mode = null, selectedCells = [], splineVector = []) {
+  const jsonFileName = `${name}.json`;
   const jsonFilePath = path.join(OUTPUT_DIR_JSON, jsonFileName);
 
   let jsonContent = await readJsonFile(jsonFilePath);
@@ -41,7 +41,7 @@ export async function savePointsToJson(seed, dataSet, mode = null, selectedCells
     jsonContent.splineVector = splineVector;
   } else {
     jsonContent = {
-      id: seed,
+      id: name,
       mode: mode,
       trackSize: selectedCells.length,
       fitness: null,

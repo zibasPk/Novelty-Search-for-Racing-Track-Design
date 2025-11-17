@@ -4,3 +4,10 @@ export class SimulationTimeoutError extends Error {
     this.name = 'SimulationTimeoutError';
   }
 }
+
+export class PositionCorrectionError extends Error {
+  constructor(message = 'Position correction failed') {
+    super(message);
+    this.name = 'PositionCorrectionError';
+  }
+}

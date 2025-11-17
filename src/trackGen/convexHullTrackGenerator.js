@@ -1,4 +1,4 @@
-import { pushApart, fixAngles, generateCatmullRomSpline } from "splineGenerator.js";
+import { pushApart, fixAngles, generateCatmullRomSpline } from "./splineGenerator.js";
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
 import log from "loglevel";
 

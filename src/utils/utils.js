@@ -1,5 +1,4 @@
 import { BBOX } from "./constants.js";
-import log from "loglevel"
 
 
 
@@ -112,7 +111,7 @@ export function calculateCurve(p1, p2, p3) {
   }
 
   const D = 2 * determinant(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
-  
+
   if (D === 0) return null;
 
   const ux = ((p1.x ** 2 + p1.y ** 2) * (p2.y - p3.y) +
@@ -274,35 +273,3 @@ export function resamplePoints(points) {
   return resampled;
 }
 
-export function calculateFinalPose(sections, startPose = { x: 0, y: 0, heading: 0 }) {
-  let pose = { ...startPose };
-
-  for (const s of sections) {
-    if (s.type === 'straight') {
-      // move forward
-      pose.x += s.length * Math.cos(pose.heading);
-      pose.y += s.length * Math.sin(pose.heading);
-      // heading unchanged
-    }
-    else if (s.type === 'curve') {
-      const dirSign = s.dir === 'lft' ? 1 : -1;
-      const angRad = (s.angle * Math.PI) / 180;
-
-      // find circle center
-      const cx = pose.x - dirSign * s.radius * Math.sin(pose.heading);
-      const cy = pose.y + dirSign * s.radius * Math.cos(pose.heading);
-
-      // advance heading
-      pose.heading += dirSign * angRad;
-
-      // new position on circle
-      pose.x = cx + dirSign * s.radius * Math.sin(pose.heading);
-      pose.y = cy - dirSign * s.radius * Math.cos(pose.heading);
-    }
-  }
-
-  // normalize heading to [-PI, PI]
-  pose.heading = ((pose.heading + Math.PI) % (2 * Math.PI)) - Math.PI;
-
-  return pose;
-}

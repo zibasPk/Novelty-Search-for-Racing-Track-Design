@@ -3,6 +3,7 @@ import { ConvexHullTrackGenerator } from './convexHullTrackGenerator.js';
 import * as utils from '../utils/utils.js';
 import { JSON_DEBUG } from '../utils/constants.js';
 import log from "loglevel"
+import * as spline from './splineGenerator.js';
 
 let trackGenerator;
 let savePointsToJson;
@@ -29,21 +30,21 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 			throw new Error('Invalid track generator mode');
 	}
 
-	// let splineTrack = trackGenerator.trackEdges;
-	let splineTrack = utils.splineSmoothing(trackGenerator.trackEdges);
+	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
+
 	// let splineTrack = utils.splineSmoothingWithStraights(trackGenerator.trackEdges);
 
-	//process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
-	// const segmentLength = 10;
-	// const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
-	// splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
+	// process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
+	const segmentLength = 10;
+	const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
+	splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
 
 	let splineVector = utils.resamplePoints(splineTrack)
 	if (saveJSON) {
 		if (mode === 'voronoi')
-			savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineTrack);
+			await savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineTrack);
 		else
-			savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineTrack );
+			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineTrack );
 	}
 
 	return { track: splineTrack, generator: trackGenerator, splineVector: splineVector };
