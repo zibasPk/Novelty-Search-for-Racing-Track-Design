@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import { generateTrack } from '../trackGen/trackGenerator.js';
-import * as xml from '../utils/xmlTorcsGenerator.js';
+import {TorcsXMLGenerator} from '../utils/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
 import os from 'os';
@@ -73,7 +73,8 @@ export async function simulate(
   );
 
   // translate to XML for TORCS
-  const trackXml = xml.exportTrackToXML(trackResults.track, 0, true, seed);
+  const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
+  const trackXml = xmlGenerator.generateXML(0, true);
   log.info(`SEED: ${seed}`);
   log.info(`MODE: ${mode}`);
   log.info(`trackSize: ${trackSize}`);
@@ -208,12 +209,7 @@ async function stopDockerContainer(containerId) {
 async function generateAndMoveTrackFiles(containerId, trackXml, seed) {
   const tmpDir = os.tmpdir();
   const tmpFilePath = path.join(tmpDir, `${seed}.xml`);
-  const xmlDir = OUTPUT_DIR_XML;
   await fs.writeFile(tmpFilePath, trackXml);
-
-  // test section to save xml files locally
-  await fs.mkdir(xmlDir, { recursive: true });
-  await fs.writeFile(path.join(xmlDir, `${seed}.xml`), trackXml);
 
   try {
     await executeCommand(

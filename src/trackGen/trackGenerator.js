@@ -2,7 +2,6 @@ import { VoronoiTrackGenerator } from './voronoiTrackGenerator.js';
 import { ConvexHullTrackGenerator } from './convexHullTrackGenerator.js';
 import * as utils from '../utils/utils.js';
 import { JSON_DEBUG } from '../utils/constants.js';
-import log from "loglevel"
 import * as spline from './splineGenerator.js';
 
 let trackGenerator;
@@ -39,12 +38,12 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 	const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
 	splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
 
-	let splineVector = utils.resamplePoints(splineTrack)
+	let splineVector = utils.resamplePoints(splineTrack);
 	if (saveJSON) {
 		if (mode === 'voronoi')
-			await savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineTrack);
+			await savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector);
 		else
-			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineTrack );
+			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector );
 	}
 
 	return { track: splineTrack, generator: trackGenerator, splineVector: splineVector };

@@ -81,9 +81,10 @@ export function findMaxCurveBeforeStraight(track, segmentLength) {
  * Calculate curvature of a sequence of three points in the track starting at index i.
  * @param {*} track 
  * @param {*} i 
+ * @param {*} absolute If true, return absolute curvature; if false, return signed curvature.
  * @returns 
  */
-export function calculateCurvature(track, i) {
+export function calculateCurvature(track, i, absolute = true) {
   const current = track[i];
   const next = track[(i + 1) % track.length];
   const nextNext = track[(i + 2) % track.length];
@@ -96,7 +97,11 @@ export function calculateCurvature(track, i) {
   const numerator = xp * ypp - yp * xpp;
   const denominator = Math.pow((xp * xp + yp * yp), 1.5);
 
-  return denominator !== 0 ? Math.abs(numerator / denominator) : 0;
+  if (absolute) {
+    return denominator !== 0 ? Math.abs(numerator / denominator) : 0;
+  } else {
+    return denominator !== 0 ? numerator / denominator : 0;
+  }
 }
 
 export function calculateSegment(point1, point2) {
