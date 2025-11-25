@@ -9,6 +9,9 @@ app.use(express.static(path.join(__dirname))); // __dirname points to the 'web' 
 // Serve files from 'root' located outside the 'web' directory
 app.use('/src', express.static(path.join(__dirname, '..', 'src')));
 
+// Essential for req.body to work
+app.use(express.json());
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });

@@ -1,13 +1,24 @@
 import express from 'express';
+import cors from 'cors'; // <--- 1. IMPORT CORS HERE
 import { generateTrack } from '../trackGen/trackGenerator.js';
 import { crossover, crossover2 } from '../genetic/crossoverVoronoi.js';
 import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull.js';
 import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
 import { BBOX, JSON_DEBUG } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
-import log from "loglevel"
+import log from "loglevel";
 
 const app = express();
+
+// --- 2. ENABLE CORS HERE ---
+// This allows your frontend (likely on port 3000) to access this API
+app.use(cors({
+  origin: 'http://localhost:3000'
+  // If you want to allow ALL origins (not recommended for production but easy for dev), use:
+  // origin: '*'
+}));
+// ---------------------------
+
 app.use(express.json());
 
 /* ─────────────────────────────────────────────────────────────
@@ -34,6 +45,28 @@ app.post('/generate', async (req, res) => {
         y: cell.site.y
       })),
       trackSize: generator.trackSize,
+      splineVector
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error in /generate:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+app.post('/genforweb', async (req, res) => {
+  try {
+    const { id, mode, trackSize } = req.body;
+
+    const { track, generator, splineVector } =
+      await generateTrack(mode, BBOX, id, trackSize, JSON_DEBUG);
+
+    const response = {
+      mode,
+      track,
+      generator: generator.toJSON(),
       splineVector
     };
 

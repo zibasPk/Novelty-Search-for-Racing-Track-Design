@@ -132,6 +132,19 @@ export class VoronoiTrackGenerator {
 
     return trackPoints;
   }
+
+  toJSON() {
+    return {
+      randomGen: this.randomGen,
+      bbox: this.bbox,
+      diagram: this.diagram,
+      dataSet: this.dataSet,
+      trackEdges: this.trackEdges,
+      trackSize: this.trackSize,
+      selectedCells: this.selectedCells,
+      patchPath: this.patchPath
+    };
+  }
 }
 
 class DisjointSet {
@@ -208,4 +221,5 @@ class PathFinder {
 
     return null; // No path found
   }
+  
 }

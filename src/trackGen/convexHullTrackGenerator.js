@@ -85,6 +85,16 @@ export class ConvexHullTrackGenerator {
 
     return rSet;
   }
+
+  toJSON() {
+    return {
+      bbox: this.bbox,
+      size: this.size,
+      dataSet: this.dataSet,
+      dataSetHull: this.dataSetHull,
+      trackEdges: this.trackEdges
+    };
+  }
 }
 
 export default ConvexHullTrackGenerator;
