@@ -1,31 +1,58 @@
 import {
   BBOX,
-} from '../utils/constants.js';
-import { generateTrack } from '../trackGen/trackGenerator.js';
-import {TorcsXMLGenerator} from '../utils/torcsXMLGenerator.js';
-import * as xml from '../utils/xmlTorcsGenerator.js';
+} from '../constants.js';
+import { generateTrack } from '../../trackGen/trackGenerator.js';
+import { TorcsXMLGenerator } from '../torcsXMLGenerator.js';
+import { simulate } from '../../sim/simulateTrack.js';
 import log from "loglevel"
 
 
 let startSeed = 0;
 const trackLengths = [];
 
-for(let seed = startSeed; seed < startSeed + 4000; seed++){
+for (let seed = startSeed; seed < startSeed + 2000; seed++) {
   log.setLevel("warn");
-  let result =await generateTrack(
-      "voronoi", BBOX, seed, (seed % 8) + 1,
-      true, [], []
+  let result = await generateTrack(
+    "voronoi", BBOX, seed, (seed % 8) + 1,
+    true, [], []
   );
   trackLengths.push(result.track.length);
   log.setLevel("debug");
   try {
-  // const trackXml = xml.exportTrackToXML(result.track, 0, true, seed);
-  let xmlGenerator = new TorcsXMLGenerator(result.track, seed);
-  xmlGenerator.generateXML(0, true);
+    // const trackXml = xml.exportTrackToXML(result.track, 0, true, seed);
+    let xmlGenerator = new TorcsXMLGenerator(result.track, seed);
+    xmlGenerator.generateXML(0, true);
   } catch (e) {
     log.error(`Error generating xml for track seed ${seed} : ${e.message}`);
   }
 }
+
+// for all files in the data/voronoi/fitted folder generate the xml file
+// import fs from 'fs/promises';
+// const fittedDir = 'data/voronoi/fitted/';
+// const files = await fs.readdir(fittedDir);
+// for (const file of files) {
+//   if (file.endsWith('.json')) {
+//     const filePath = fittedDir + file;
+//     const data = await fs.readFile(filePath, 'utf-8');
+//     const trackData = JSON.parse(data);
+
+//     log.setLevel("debug");
+//     try {
+//       await simulate(
+//         trackData.mode,
+//         trackData.selectedCells.length,
+//         trackData.dataSet,
+//         trackData.selectedCells,
+//         trackData.id,
+//         false
+//       );
+//     } catch (e) {
+//       log.error(`Error simulating track from file ${file} : ${e.message}`);
+//     }
+//   }
+// }
+
 
 // get some statistics on track lengths
 const sum = trackLengths.reduce((a, b) => a + b, 0);
@@ -103,7 +130,7 @@ log.info(`Standard Deviation: ${stdDev}`);
 
 
 
- 
+
 
 
 
