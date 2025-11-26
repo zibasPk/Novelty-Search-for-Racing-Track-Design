@@ -13,9 +13,7 @@ const app = express();
 // --- 2. ENABLE CORS HERE ---
 // This allows your frontend (likely on port 3000) to access this API
 app.use(cors({
-  origin: 'http://localhost:3000'
-  // If you want to allow ALL origins (not recommended for production but easy for dev), use:
-  // origin: '*'
+  origin: ['http://localhost:3000', 'http://localhost:8888']
 }));
 // ---------------------------
 
