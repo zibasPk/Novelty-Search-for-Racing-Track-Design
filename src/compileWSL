@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# TORCS Installation Script
+# This script removes existing TORCS code, copies fresh source, and installs TORCS, written for a wsl environment.
+set -e  # Exit on any error
+echo "=== TORCS Installation Script ==="
+echo
+
+# Remove existing /torcs-code directory
+echo "Step 1: Removing existing /torcs-code directory..."
+sudo rm -rf /torcs-code
+
+# Copy source code to /torcs-code
+echo "Step 2: Copying torcs-1.3.7-master to /torcs-code..."
+sudo cp -r torcs-1.3.7-master /torcs-code
+
+#copy the output
+echo "step 2.5: copy the output.xml file"
+sudo cp -r output.xml /torcs-code
+
+# Change to the TORCS directory
+echo "Step 3: Changing to /torcs-code directory..."
+cd /torcs-code
+
+# Make configure script executable
+echo "Step 4: Making configure script executable..."
+sudo chmod +x ./configure
+
+# Run configure with specified options for debug without optimizations
+echo "Step 5: Running configure..."
+sudo ./configure --disable-xrandr --x-libraries=/usr/lib/
+
+# Compile TORCS
+echo "Step 6: Compiling TORCS (this may take a while)..."
+
+sudo make clean
+sudo make
+# Install TORCS
+echo "Step 7: Installing TORCS..."
+sudo make install
+
+# Install TORCS data files
+echo "Step 8: Installing TORCS data files..."
+sudo make datainstall
+
+# Create output directory and copy output.xml
+echo "Step 9: Creating output directory and copying output.xml..."
+sudo mkdir -p /usr/local/share/games/torcs/tracks/road/output
+sudo cp -r output.xml /usr/local/share/games/torcs/tracks/road/output/
+
+echo
+echo "=== TORCS installation completed successfully! ==="

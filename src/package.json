@@ -1,0 +1,21 @@
+{
+  "name": "sim",
+  "version": "1.0.0",
+  "description": "",
+  "main": "mapElitesAPI.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "cubic-hermite": "^1.0.0",
+    "express": "^5.1.0",
+    "loglevel": "^1.8.1",
+    "mathjs": "^15.0.0",
+    "vitest": "4.0.5"
+  }
+}

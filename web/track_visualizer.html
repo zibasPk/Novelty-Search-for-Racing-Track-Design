@@ -50,9 +50,6 @@
   </div>
 
   <script type="module">
-    import { generateTrack } from '../src/trackGen/trackGenerator.js';
-    import { VoronoiTrackGenerator } from '../src/trackGen/voronoiTrackGenerator.js';
-    import { ConvexHullTrackGenerator } from '../src/trackGen/convexHullTrackGenerator.js';
     const COLORS = {
       VORONOI: [180, 192, 165],    // Sage
       POINTS: [113, 131, 85],     // Reseda Green
@@ -69,6 +66,8 @@
 
     // Constants and global variables
     const BBOX = { xl: 0, xr: 600, yt: 0, yb: 600 };
+    const API_URL = 'http://localhost:4242'; // URL of the separate API server
+    let currentTrackIndex = 0;
     let trackResult;
     let splinePoints = [];
 
@@ -102,13 +101,36 @@
       }
     }
 
-    // Track generation and display functions
-    async function genTrack(seed, trackSize, mode, dataSet = [], selectedCells = []) {
+    // // Track generation and display functions
+    // async function genTrack(seed, trackSize, mode, dataSet = [], selectedCells = []) {
 
+    //   if (mode === "voronoi") {
+    //     if (isNaN(seed)) seed = Math.random();
+    //     if (isNaN(trackSize)) trackSize = 5;
+    //     if(trackSize>50){
+    //     alert('trackSize too high!');
+    //     trackSize = 5;
+    //     }
+    //   } else {
+    //     if (isNaN(seed)) seed = Math.random();
+    //     if (isNaN(trackSize)) trackSize = 50;
+    //   }
+    
+    //   trackResult = await generateTrack(mode, BBOX, seed, trackSize, false, dataSet, selectedCells);
+    //   splinePoints = await trackResult.track;
+    //   redraw();
+
+
+
+      
+    // }
+
+     // --- API INTERACTION ---
+    async function genTrack(seed, trackSize, mode) {
       if (mode === "voronoi") {
         if (isNaN(seed)) seed = Math.random();
         if (isNaN(trackSize)) trackSize = 5;
-        if(trackSize>50){
+        if (trackSize>50){
         alert('trackSize too high!');
         trackSize = 5;
         }
@@ -116,10 +138,37 @@
         if (isNaN(seed)) seed = Math.random();
         if (isNaN(trackSize)) trackSize = 50;
       }
-    
-      trackResult = await generateTrack(mode, BBOX, seed, trackSize, false, dataSet, selectedCells);
-      splinePoints = await trackResult.track;
-      redraw();
+
+      try {
+        // Pointing to the separate API server on port 4242
+        const response = await fetch(`${API_URL}/genforweb`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            id: seed,
+            mode: mode,
+            trackSize: trackSize
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        trackResult = data;
+        splinePoints = trackResult.track;
+        redraw();
+        
+      } catch (error) {
+        console.error('Error generating track:', error);
+        alert(`Failed to generate track. Ensure the API is running on ${API_URL}.`);
+      }
+
+
+
     }
 
     function displayTrack(index) {
@@ -209,9 +258,9 @@
       if (!trackResult) return;
 
       let mode;
-        if (trackResult.generator instanceof VoronoiTrackGenerator) {
+        if (trackResult.mode === 'voronoi') {
           mode = 'voronoi';
-        } else if (trackResult.generator instanceof ConvexHullTrackGenerator) {
+        } else if (trackResult.mode === 'convexHull') {
           mode = 'convexHull';
         } else {
           console.error('Unknown track generator type');

@@ -881,7 +881,28 @@ static void CreateSegRing(void *TrackHandle, tTrack *theTrack, int ext)
     }
 
     /* printf("\n"); */
-    
+    tTrackSeg* lastSeg = root;
+		tTrackSeg* firstSeg = root->next;
+
+		// Calculate the distance between the end of the last segment and the start of the first segment.
+		tdble d_x = firstSeg->vertex[TR_SR].x - lastSeg->vertex[TR_ER].x;
+		tdble d_y = firstSeg->vertex[TR_SR].y - lastSeg->vertex[TR_ER].y;
+		tdble d_z = firstSeg->vertex[TR_SR].z - lastSeg->vertex[TR_ER].z;
+		tdble dist = sqrt(d_x * d_x + d_y * d_y + d_z * d_z);
+
+		// Define a small threshold to account for floating-point inaccuracies.
+		const double CONNECTION_THRESHOLD = 0.01;
+
+		// If the distance is greater than the threshold, adjust the end vertices of the last segment.
+		if (dist > CONNECTION_THRESHOLD) {
+				lastSeg->vertex[TR_ER].x = firstSeg->vertex[TR_SR].x;
+				lastSeg->vertex[TR_ER].y = firstSeg->vertex[TR_SR].y;
+				lastSeg->vertex[TR_ER].z = firstSeg->vertex[TR_SR].z;
+
+				lastSeg->vertex[TR_EL].x = firstSeg->vertex[TR_SL].x;
+				lastSeg->vertex[TR_EL].y = firstSeg->vertex[TR_SL].y;
+				lastSeg->vertex[TR_EL].z = firstSeg->vertex[TR_SL].z;
+		}
 
     theTrack->seg = root;
     theTrack->length = totLength;

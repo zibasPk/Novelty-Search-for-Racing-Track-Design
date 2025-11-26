@@ -1,15 +1,16 @@
-import {BBOX, NUMBER_OF_VORONOI_SITES, MAX_NUMBER_OF_SELECTED_CELLS } from "../utils/constants.js"
+import { BBOX, NUMBER_OF_VORONOI_SITES, MAX_NUMBER_OF_SELECTED_CELLS } from "../utils/constants.js"
+import log from "loglevel"
 
 export function crossover(parent1, parent2, regularize = false) {
   // Extract dataset from each parent
   let dataSet1 = parent1.dataSet;
   let dataSet2 = parent2.dataSet;
-  let halfDataSet1  = []
-  let halfDataSet2  = []
+  let halfDataSet1 = []
+  let halfDataSet2 = []
 
   let parent1selected = parent1.selectedCells.map(cell => cell.site)
   let parent2selected = parent2.selectedCells.map(cell => cell.site)
-  
+
   const center = computeGeometricCenter([...parent1selected, ...parent2selected]);
 
   const { slope, intercept } = randomSlopeThroughCenter(center);
@@ -48,9 +49,9 @@ export function crossover(parent1, parent2, regularize = false) {
   }
 
 
-  if(regularize){
+  if (regularize) {
     //in case to reduce number of cells:
-    const lengthOrig = Math.floor((parent1selected.length + parent2selected.length)/2);
+    const lengthOrig = Math.floor((parent1selected.length + parent2selected.length) / 2);
     // Ensure the total number of selected cells does not exceed the original length
     const maxCells = Math.min(lengthOrig, MAX_NUMBER_OF_SELECTED_CELLS);
     while ((selected1.length + selected2.length) > maxCells) {
@@ -61,8 +62,8 @@ export function crossover(parent1, parent2, regularize = false) {
       }
     }
   }
-  
-    // Combine the corresponding halves 
+
+  // Combine the corresponding halves 
   let combinedSelectedCells = [...selected1, ...selected2];
 
   // Combine the corresponding halves of the dataset
@@ -71,27 +72,27 @@ export function crossover(parent1, parent2, regularize = false) {
   let i = NUMBER_OF_VORONOI_SITES - 1; // Start from the end of the arrays
   while (combinedDataSet.length < NUMBER_OF_VORONOI_SITES && i >= 0) {
     if (i < halfDataSet1.length && combinedDataSet.length < NUMBER_OF_VORONOI_SITES) {
-      if(!isPointAlreadyInSet(halfDataSet1[i],combinedDataSet)){
+      if (!isPointAlreadyInSet(halfDataSet1[i], combinedDataSet)) {
         combinedDataSet.push(halfDataSet1[i]);
       }
     }
     if (i < halfDataSet2.length && combinedDataSet.length < NUMBER_OF_VORONOI_SITES) {
-      if(!isPointAlreadyInSet(halfDataSet2[i],combinedDataSet)){
+      if (!isPointAlreadyInSet(halfDataSet2[i], combinedDataSet)) {
         combinedDataSet.push(halfDataSet2[i]);
       }
     }
     i--;
   }
- 
+
   return { ds: combinedDataSet, sel: combinedSelectedCells, lineParameters: { slope, intercept } };
 }
 
 function randomSlopeThroughCenter(center) {
-    // Generate a random angle in radians between -π/2 and π/2
-    const angle = Math.random() * Math.PI - Math.PI / 2;
-    const slope = Math.tan(angle);
-    const intercept = center.y - slope * center.x;
-    return { slope, intercept };
+  // Generate a random angle in radians between -π/2 and π/2
+  const angle = Math.random() * Math.PI - Math.PI / 2;
+  const slope = Math.tan(angle);
+  const intercept = center.y - slope * center.x;
+  return { slope, intercept };
 }
 
 
@@ -105,13 +106,13 @@ function computeGeometricCenter(vertices) {
 
 // ---
 
-export function crossover2(parent1, parent2,regularize=false) {
+export function crossover2(parent1, parent2, regularize = false) {
   const selectedCellSites = [];
-  const distanceThreshold = BBOX.xr*0.02;
+  const distanceThreshold = BBOX.xr * 0.02;
   let combinedDataSet = [];
   const parentSelected1 = [...parent1.selectedCells];
   const parentSelected2 = [...parent2.selectedCells];
-  
+
 
   const centerPoint1 = parentSelected1.shift();
   const centerPoint2 = parentSelected2.shift();
@@ -121,7 +122,7 @@ export function crossover2(parent1, parent2,regularize=false) {
     const averageLength = Math.floor((parentSelected1.length + parentSelected2.length + 1) / 2);
     // Ensure the total number of selected cells does not exceed the original length
     const maxCells = Math.min(averageLength, MAX_NUMBER_OF_SELECTED_CELLS);
-    console.log("averageLength: ", averageLength);
+    log.debug("averageLength: ", averageLength);
     while ((parentSelected1.length + parentSelected2.length) > maxCells) {
       if (parentSelected1.length > parentSelected2.length) {
         parentSelected1.pop();
@@ -131,32 +132,32 @@ export function crossover2(parent1, parent2,regularize=false) {
     }
   }
 
-  let remappedUniquePoints2 =  getUniquePointsNearSites(parentSelected2).flat().filter(point => point != null);
-  
-  remappedUniquePoints2 = remapPoints(centerPoint2.site,remappedUniquePoints2,centerPoint1.site);
-  
+  let remappedUniquePoints2 = getUniquePointsNearSites(parentSelected2).flat().filter(point => point != null);
+
+  remappedUniquePoints2 = remapPoints(centerPoint2.site, remappedUniquePoints2, centerPoint1.site);
+
   combinedDataSet.push(...remappedUniquePoints2)
-  
+
   combinedDataSet.push(...getUniquePointsNearSites(parentSelected1).flat().filter(point => point != null))
 
   //some points are repeated, use this to filter out repeated points
   const uniquePoints = [];
-  const seenCoordinates = new Set();  
+  const seenCoordinates = new Set();
   combinedDataSet = combinedDataSet.filter(point => {
-      const coordKey = `${point.x},${point.y}`;
-      if (!seenCoordinates.has(coordKey)) {
-          seenCoordinates.add(coordKey);
-          uniquePoints.push(point);
-          return true;
-      }
-      return false;
+    const coordKey = `${point.x},${point.y}`;
+    if (!seenCoordinates.has(coordKey)) {
+      seenCoordinates.add(coordKey);
+      uniquePoints.push(point);
+      return true;
+    }
+    return false;
   });
   combinedDataSet = uniquePoints;
 
-  
+
   //remember that this function reads centerPoint2 to remappedSelectedParent2 !!
-  let remappedSelectedParent2 = remapPoints(centerPoint2.site,parentSelected2.map(cell => cell.site),centerPoint1.site);
-  
+  let remappedSelectedParent2 = remapPoints(centerPoint2.site, parentSelected2.map(cell => cell.site), centerPoint1.site);
+
   remappedSelectedParent2 = remappedSelectedParent2.filter(point => {
     for (const site of parentSelected1.map(cell => cell.site)) {
       const distance = calculateDistance(point, site);
@@ -165,28 +166,28 @@ export function crossover2(parent1, parent2,regularize=false) {
       }
     }
     return true;
-    });
+  });
 
-  
+
   //push to selectedCellSites
-  selectedCellSites.push(...parentSelected1.map(cell => cell.site),...remappedSelectedParent2)
+  selectedCellSites.push(...parentSelected1.map(cell => cell.site), ...remappedSelectedParent2)
 
   //Remove points in the combinedDataset that are too close to the selectedCellSites 
   combinedDataSet = combinedDataSet.filter(point => {
-  for (const site of selectedCellSites) {
-    const distance = calculateDistance(point, site);
-    if (distance <= distanceThreshold) {
-      if(!isPointAlreadyInSet(point,selectedCellSites))
-      return false;
+    for (const site of selectedCellSites) {
+      const distance = calculateDistance(point, site);
+      if (distance <= distanceThreshold) {
+        if (!isPointAlreadyInSet(point, selectedCellSites))
+          return false;
+      }
     }
-  }
-  return true;
+    return true;
   });
 
-  const centerOfCanvas = {x: BBOX.xr/2, y: BBOX.yb/2};
-  const borderPoints1 = sortByDistance(parent1.dataSet,centerOfCanvas).filter(point => point != null);
-  const borderPoints2 = sortByDistance(parent2.dataSet,centerOfCanvas).filter(point => point != null);
-  let i = Math.floor(NUMBER_OF_VORONOI_SITES*0.7); //arbitrary value: still giving priority to most far points but not at the borders
+  const centerOfCanvas = { x: BBOX.xr / 2, y: BBOX.yb / 2 };
+  const borderPoints1 = sortByDistance(parent1.dataSet, centerOfCanvas).filter(point => point != null);
+  const borderPoints2 = sortByDistance(parent2.dataSet, centerOfCanvas).filter(point => point != null);
+  let i = Math.floor(NUMBER_OF_VORONOI_SITES * 0.7); //arbitrary value: still giving priority to most far points but not at the borders
   while (combinedDataSet.length < NUMBER_OF_VORONOI_SITES && i >= 0) {
     if (i < borderPoints1.length) {
       combinedDataSet.push(borderPoints1[i]);
@@ -201,15 +202,15 @@ export function crossover2(parent1, parent2,regularize=false) {
 }
 
 
-function remapPoints(initPoint, points,  remapPoint){
+function remapPoints(initPoint, points, remapPoint) {
   let relativeDistances = points.map(point => ({
     x: point.x - initPoint.x,
     y: point.y - initPoint.y
   }));
 
-  
-  relativeDistances = relativeDistances.filter(cell => (cell.x != 0) && (cell.y != 0) );
-  relativeDistances.push({x:0,y:0});
+
+  relativeDistances = relativeDistances.filter(cell => (cell.x != 0) && (cell.y != 0));
+  relativeDistances.push({ x: 0, y: 0 });
   const remappedPoints = relativeDistances.map(distance => ({
     x: remapPoint.x + distance.x,
     y: remapPoint.y + distance.y
@@ -256,7 +257,7 @@ export function crossover3(parent1, parent2) {
   const parentSelected2 = [...parent2.selectedCells];
   const selected = [];
 
-  for (let i = 0; i < Math.ceil(parentSelected1.length/2); i++) {
+  for (let i = 0; i < Math.ceil(parentSelected1.length / 2); i++) {
     const point1 = parentSelected1[i].site;
     const point2 = findNearestPoint(point1, parent2.dataSet);
     const middlePoint = getMiddlePoint(point1, point2);
@@ -265,7 +266,7 @@ export function crossover3(parent1, parent2) {
     }
   }
 
-  for (let i = 0; i < Math.floor(parentSelected2.length/2); i++) {
+  for (let i = 0; i < Math.floor(parentSelected2.length / 2); i++) {
     const point1 = parentSelected2[i].site;
     const point2 = findNearestPoint(point1, parent1.dataSet);
     const middlePoint = getMiddlePoint(point1, point2);
@@ -273,14 +274,14 @@ export function crossover3(parent1, parent2) {
       selected.push(middlePoint);
     }
   }
-  
+
   // For each cell in parentSelected1, find the nearest point in parent2.dataSet
   // and add the middle point to mergedSelectedSites  
   const relevantPoints1 = getUniquePointsNearSites(parentSelected1).flat().filter(point => point != null);
   const relevantPoints2 = getUniquePointsNearSites(parentSelected2).flat().filter(point => point != null);
   let combinedDataSet = []
 
-  for (let i = 0; i < Math.ceil(relevantPoints1.length/2); i++) {
+  for (let i = 0; i < Math.ceil(relevantPoints1.length / 2); i++) {
     const point1 = relevantPoints1[i];
     const point2 = findNearestPoint(point1, parent2.dataSet);
     const middlePoint = getMiddlePoint(point1, point2);
@@ -288,8 +289,8 @@ export function crossover3(parent1, parent2) {
       combinedDataSet.push(middlePoint);
     }
   }
-  
-  for (let i = 0; i < Math.ceil(relevantPoints2.length/2); i++) {
+
+  for (let i = 0; i < Math.ceil(relevantPoints2.length / 2); i++) {
     const point1 = relevantPoints2[i];
     const point2 = findNearestPoint(point1, parent1.dataSet);
     const middlePoint = getMiddlePoint(point1, point2);
@@ -298,9 +299,9 @@ export function crossover3(parent1, parent2) {
     }
   }
 
-  const centerOfCanvas = {x: BBOX.xr/2, y: BBOX.yb/2};
-  const borderPoints1 = sortByDistance(parent1.dataSet,centerOfCanvas).filter(point => point != null);
-  const borderPoints2 = sortByDistance(parent2.dataSet,centerOfCanvas).filter(point => point != null);
+  const centerOfCanvas = { x: BBOX.xr / 2, y: BBOX.yb / 2 };
+  const borderPoints1 = sortByDistance(parent1.dataSet, centerOfCanvas).filter(point => point != null);
+  const borderPoints2 = sortByDistance(parent2.dataSet, centerOfCanvas).filter(point => point != null);
 
   let i = Math.min(borderPoints1.length, borderPoints2.length) - 1;
   while (combinedDataSet.length < NUMBER_OF_VORONOI_SITES && i >= 0) {
@@ -320,7 +321,7 @@ export function crossover3(parent1, parent2) {
 function findNearestPoint(point, points) {
   let nearestPoint = null;
   let minDistance = Infinity;
-  
+
   for (let i = 0; i < points.length; i++) {
     const currentPoint = points[i].site || points[i];
     const distance = calculateDistance(point, currentPoint);
@@ -329,13 +330,13 @@ function findNearestPoint(point, points) {
       nearestPoint = currentPoint;
     }
   }
-  
+
   return nearestPoint;
 }
 
 function isPointAlreadyInSet(point, set) {
-  return set.some(existingPoint => 
-    Math.abs(existingPoint.x - point.x) < 1e-6 && 
+  return set.some(existingPoint =>
+    Math.abs(existingPoint.x - point.x) < 1e-6 &&
     Math.abs(existingPoint.y - point.y) < 1e-6
   );
 }

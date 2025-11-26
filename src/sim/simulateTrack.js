@@ -1,8 +1,7 @@
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import { generateTrack } from '../trackGen/trackGenerator.js';
-import * as xml from '../utils/xmlTorcsGenerator.js';
-import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
+import {TorcsXMLGenerator} from '../utils/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
 import os from 'os';
@@ -12,7 +11,10 @@ import {
   DOCKER_IMAGE_NAME,
   MEMORY_LIMIT,
   SIMULATION_TIMEOUT,
+  OUTPUT_DIR_XML
 } from '../utils/constants.js';
+import { SimulationTimeoutError } from '../utils/errors.js';
+import log from "loglevel";
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
@@ -42,13 +44,11 @@ export async function simulate(
     if (mode === 'voronoi') {
       if (selected.length > 0) {
         trackSize = selected.length;
-      } 
+      }
     } else {
       trackSize = 50;
     }
   }
-
-
   /* 
   // Generate initial track
   let initialTrack = await generateTrack(mode, BBOX, seed, trackSize, true, dataSet, selected);
@@ -66,29 +66,36 @@ export async function simulate(
   const trackResults = await generateTrack(mode, BBOX, seed, trackSize, false, mutatedData.ds, mutatedData.sel || mutatedData.hull);
   */
 
+  // generate track json
   const trackResults = await generateTrack(
     mode, BBOX, seed, trackSize,
     saveJson, dataSet, selected
   );
 
-  const trackXml = xml.exportTrackToXML(trackResults.track);
-  console.log(`SEED: ${seed}`);
-  console.log(`MODE: ${mode}`);
-  console.log(`trackSize: ${trackSize}`);
+  // translate to XML for TORCS
+  const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
+  const trackXml = xmlGenerator.generateXML(0, true);
+  log.info(`SEED: ${seed}`);
+  log.info(`MODE: ${mode}`);
+  log.info(`trackSize: ${trackSize}`);
 
   let containerId;
+  let timeoutId;
   try {
-    containerId = await startDockerContainer();
+    containerId = await startDockerContainer(seed);
+   
+    // Move track XML to Docker container and generate track files
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
-    console.log(trackGenOutput);
+    log.info(trackGenOutput);
 
     const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export -r 5 --json ${plot ? '' : '--plots'}`;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Simulation timeout')), SIMULATION_TIMEOUT)
+        timeoutId = setTimeout(() => reject(new SimulationTimeoutError()), SIMULATION_TIMEOUT)
       )
     ]);
+  
     let rawMetrics = {};
     const jsonStart = simulationOutput.indexOf('===FINAL_JSON_START===');
     const jsonEnd = simulationOutput.indexOf('===FINAL_JSON_END===', jsonStart);
@@ -171,17 +178,19 @@ export async function simulate(
     console.error(`Error: ${err.message}`);
     throw err;
   } finally {
+    clearTimeout(timeoutId);
     if (containerId) {
       await stopDockerContainer(containerId);
     }
   }
 }
 
-async function startDockerContainer() {
+async function startDockerContainer(seed) {
+  let containterName = "track_simulation_" + seed;
   const containerId = await executeCommand(
-    `docker run -d -it --memory ${MEMORY_LIMIT} ${DOCKER_IMAGE_NAME}`
+    `docker run -d -it --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME}`
   );
-  console.log(`Docker container started with ID: ${containerId}`);
+  log.info(`Docker container started with ID: ${containerId}`);
   await executeCommand(
     `docker exec ${containerId} mkdir -p /usr/local/share/games/torcs/tracks/road/output`
   );
@@ -191,7 +200,7 @@ async function startDockerContainer() {
 async function stopDockerContainer(containerId) {
   try {
     await executeCommand(`docker rm --force ${containerId}`);
-    console.log(`Docker container ${containerId} stopped and removed.`);
+    log.info(`Docker container ${containerId} stopped and removed.`);
   } catch (err) {
     console.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
   }
@@ -201,6 +210,7 @@ async function generateAndMoveTrackFiles(containerId, trackXml, seed) {
   const tmpDir = os.tmpdir();
   const tmpFilePath = path.join(tmpDir, `${seed}.xml`);
   await fs.writeFile(tmpFilePath, trackXml);
+
   try {
     await executeCommand(
       `docker cp ${tmpFilePath} ` +
