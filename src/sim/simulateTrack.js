@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import { generateTrack } from '../trackGen/trackGenerator.js';
-import {TorcsXMLGenerator} from '../utils/torcsXMLGenerator.js';
+import {TorcsXMLGenerator} from '../trackGen/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
 import os from 'os';

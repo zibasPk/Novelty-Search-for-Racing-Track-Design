@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import * as utils from './utils.js';
-import { OUTPUT_DIR_XML, UTILS_DIR } from './constants.js';
+import * as utils from '../utils/utils.js';
+import { OUTPUT_DIR_XML, UTILS_DIR } from '../utils/constants.js';
 import log from "loglevel";
-import { PositionCorrectionError } from "./errors.js";
+import { PositionCorrectionError } from "../utils/errors.js";
 
 
 
