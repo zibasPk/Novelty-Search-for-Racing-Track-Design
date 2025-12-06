@@ -1,0 +1,35 @@
+# config.py
+
+import os
+
+# --- General Setup ---
+BASE_URL = 'http://localhost:4242'
+GENERATION_MODE = 'voronoi'  # 'convexHull' or 'voronoi'
+
+# --- Track/Solution Parameters ---
+POINTS_COUNT = 100
+MAX_SELECTED_CELLS = 10  # relevant only for voronoi
+# Calculated Dimension: POINTS_COUNT * 2 (x/y) + MAX_SELECTED_CELLS * 2 (x/y) + 1 (ID)
+SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 
+TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
+
+# --- MAP-Elites Parameters ---
+ITERATIONS = 1000
+INIT_POPULATION = 100
+BATCH_SIZE = 10
+INVALID_SCORE = -1e9
+
+# --- Archive Parameters ---
+ARCHIVE_BINS = 30  # cells per axis
+REMAPPING_EVERY = 200  # move boundaries every 200 insertions
+BUFFER_SIZE = 1000  # keep last 1000 solutions
+
+# --- Checkpointing and Debugging ---
+CHECKPOINT_EVERY = 50
+DEBUG_CROSSOVER = True
+DEBUG_MUTATION = True
+
+# --- Directories (Create if not exist in main notebook setup) ---
+CHECKPOINT_DIR = "data/checkpoints/"
+HEATMAP_DIR = "data/heatmaps/"
+
