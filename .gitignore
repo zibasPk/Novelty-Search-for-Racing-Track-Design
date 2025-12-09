@@ -13,6 +13,7 @@ mapelite/first_test/
 
 src/data/tests/
 
+*.mp4
 *.xml
 *.json
 !package.json
