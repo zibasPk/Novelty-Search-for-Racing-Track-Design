@@ -41,5 +41,5 @@
   </section>
 
   <section name="Main Track">
-    <attnum name="width" unit="m" val="10.0"/>
+    <attnum name="width" unit="m" val="20.0"/>
     <section name="Track Segments">

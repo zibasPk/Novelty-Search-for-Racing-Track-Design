@@ -29,55 +29,48 @@ import fs from 'fs/promises';
 // }
 
 // for all files in the data / voronoi / fitted folder generate the xml file
-// import fs from 'fs/promises';
-// const fittedDir = 'data/voronoi/fitted/';
-// const files = await fs.readdir(fittedDir);
-// for (const file of files) {
-//   if (file.endsWith('.json')) {
-//     const filePath = fittedDir + file;
-//     const data = await fs.readFile(filePath, 'utf-8');
-//     const trackData = JSON.parse(data);
+const fittedDir = 'data/voronoi/fitted/';
+const files = await fs.readdir(fittedDir);
+log.setLevel("info");
 
-//     log.setLevel("debug");
-//     try {
-//       await simulate(
-//         trackData.mode,
-//         trackData.selectedCells.length,
-//         trackData.dataSet,
-//         trackData.selectedCells,
-//         trackData.id,
-//         false
-//       );
-//     } catch (e) {
-//       log.error(`Error simulating track from file ${file} : ${e.message}`);
-//     }
-//   }
-// }
+for (const file of files) {
+  if (file.endsWith('.json')) {
+    const filePath = fittedDir + file;
+    const data = await fs.readFile(filePath, 'utf-8');
+    const trackData = JSON.parse(data);
+
+    genJsonAndXml(trackData);
+  }
+}
 
 
 // load from data/voronoi/json the file named 123.json and generate the xml file
-const jsonDir = 'data/voronoi/json/';
-const filename = '109.59621462502487.json';
-const filePath = jsonDir + filename;
+// const jsonDir = 'data/voronoi/json/';
+// const filename = '109.59621462502487.json';
+// const filePath = jsonDir + filename;
 
-const data = await fs.readFile(filePath, 'utf-8');
-const trackData = JSON.parse(data);
+// const data = await fs.readFile(filePath, 'utf-8');
+// const trackData = JSON.parse(data);
 
-log.setLevel("debug");
+// log.setLevel("debug");
+
+// genJsonAndXml(trackData);
 
 
-try {
-  // generate track json
-  const trackResults = await generateTrack(
-    trackData.mode, BBOX, trackData.id, trackData.selectedCells.length,
-    false, trackData.dataSet, trackData.selectedCells
-  );
+async function genJsonAndXml(trackData) {
+  try {
+    // generate track json
+    const trackResults = await generateTrack(
+      trackData.mode, BBOX, trackData.id, trackData.selectedCells.length,
+      false, trackData.dataSet, trackData.selectedCells
+    );
 
-  const seed = trackData.id;
-  // translate to XML for TORCS
-  const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
-  const trackXml = xmlGenerator.generateXML(0, true);
+    const seed = trackData.id;
+    // translate to XML for TORCS
+    const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
+    const trackXml = xmlGenerator.generateXML(0, true);
 
-} catch (e) {
-  log.error(`Error simulating track from file : ${e.message}`);
+  } catch (e) {
+    log.error(`Error generating track from file : ${e.message}`);
+  }
 }

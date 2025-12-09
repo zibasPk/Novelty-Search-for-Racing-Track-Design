@@ -11,8 +11,11 @@ export const OUTPUT_DIR_JSON = OUTPUT_DIR + '/json';
 export const OUTPUT_DIR_FIT = OUTPUT_DIR + '/fitted';
 export const OUTPUT_DIR_XML = OUTPUT_DIR + '/xmlTracks';
 export const UTILS_DIR = './src/utils/';
+
 export const JSON_DEBUG = true;
 export const SIMULATION_TIMEOUT = 60000;
+
+export const DEFAULT_TRACK_SCALE = 2.0;
 
 export const COLORS = {
   SEPARATION_LINE: [255, 0, 0],

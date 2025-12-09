@@ -1,14 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import * as utils from '../utils/utils.js';
-import { OUTPUT_DIR_XML, UTILS_DIR } from '../utils/constants.js';
+import { OUTPUT_DIR_XML, UTILS_DIR, DEFAULT_TRACK_SCALE} from '../utils/constants.js';
 import log from "loglevel";
 import { PositionCorrectionError } from "../utils/errors.js";
 
 
 
 export class TorcsXMLGenerator {
-  constructor(track, seed = 0) {
+  constructor(track, seed = 0, scale = DEFAULT_TRACK_SCALE) {
     this.track = track;
     this.seed = seed;
 
@@ -17,6 +17,7 @@ export class TorcsXMLGenerator {
     this.xml = '';
     this.sections = [];
     this.logHeader = `Track ${seed}: `;
+    this.trackScale = scale; // scale factor for track dimensions
   }
 
   /**
@@ -28,7 +29,7 @@ export class TorcsXMLGenerator {
  * @returns 
  */
   generateXML(startIndex = 0, saveXMLalsoLocally = false) {
-    const threshold = 0.01;
+    const threshold = 0.001;
     const sections = this.sections;
     const track = this.track;
     const trackName = this.seed;
@@ -89,10 +90,10 @@ export class TorcsXMLGenerator {
         points: [track[startOfStraightIdx], track[endOfStraightIdx]]
       });
     }
-
+   
     this.fixTrackClosure();
 
-    sections.forEach((s, idx) => { this.addSection(idx, s.type, s.length, s); });
+    sections.forEach((s, idx) => { this.addSection(idx, s.type, s.length , s); });
     const finalTrackOutput = this.xmlTrackHeader + this.xml + this.closingXML;
 
 
@@ -105,7 +106,7 @@ export class TorcsXMLGenerator {
         log.error(`${this.logHeader} Error creating directory or saving XML:`, err);
       }
     }
-
+ 
     return finalTrackOutput;
   }
 
@@ -113,13 +114,13 @@ export class TorcsXMLGenerator {
     if (type === 'curve') {
       this.xml += `  <section name="c${index}">\n`;
       this.xml += `    <attstr name="type" val="${curv.dir}"/>\n`;
-      this.xml += `    <attnum name="radius" unit="m" val="${curv.radius}"/>\n`;
+      this.xml += `    <attnum name="radius" unit="m" val="${curv.radius * this.trackScale}"/>\n`;
       this.xml += `    <attnum name="arc" unit="deg" val="${curv.angle}"/>\n`;
       this.xml += '  </section>\n';
     } else {
       this.xml += `  <section name="s${index}">\n`;
       this.xml += `    <attstr name="type" val="str"/>\n`;
-      this.xml += `    <attnum name="lg" unit="m" val="${length}"/>\n`;
+      this.xml += `    <attnum name="lg" unit="m" val="${length * this.trackScale}"/>\n`;
       this.xml += '  </section>\n';
     }
   }

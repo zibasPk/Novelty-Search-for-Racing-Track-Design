@@ -49,22 +49,6 @@ export async function simulate(
       trackSize = 50;
     }
   }
-  /* 
-  // Generate initial track
-  let initialTrack = await generateTrack(mode, BBOX, seed, trackSize, true, dataSet, selected);
-      
-  // Apply mutation
-  const intensityMutation = 1; 
-  
-  let mutatedData;
-  if (mode === "voronoi") {
-    mutatedData = mutationVoronoi(initialTrack.generator, intensityMutation);
-  } else {
-    mutatedData = mutationConvexHull(initialTrack.generator, intensityMutation);
-  }
-  // Generate final track with mutated data
-  const trackResults = await generateTrack(mode, BBOX, seed, trackSize, false, mutatedData.ds, mutatedData.sel || mutatedData.hull);
-  */
 
   // generate track json
   const trackResults = await generateTrack(
@@ -180,7 +164,7 @@ export async function simulate(
   } finally {
     clearTimeout(timeoutId);
     if (containerId) {
-      await stopDockerContainer(containerId);
+      // await stopDockerContainer(containerId);
     }
   }
 }

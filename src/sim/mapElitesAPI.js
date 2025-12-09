@@ -8,6 +8,8 @@ import { BBOX, JSON_DEBUG } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
 import log from "loglevel";
 
+log.setLevel("info");
+
 const app = express();
 
 // --- 2. ENABLE CORS HERE ---

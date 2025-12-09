@@ -27,6 +27,7 @@ async function runSimulation(simulationIndex) {
   } 
 }
 
+log.setLevel("debug");
 let fitness = await runSimulation(100);
 
 log.info(`Final fitness for simulation 195: ${fitness}`);
