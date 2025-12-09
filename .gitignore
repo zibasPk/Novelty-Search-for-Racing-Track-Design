@@ -12,6 +12,8 @@ venv/
 mapelite/first_test/
 
 src/data/tests/
+__pycache__/
+
 
 *.mp4
 *.xml
