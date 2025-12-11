@@ -31,13 +31,13 @@ def run_track_export(folder_name):
     os.remove(race_config)
 
 
-def run_race_simulation(folder_name, num_laps):
+def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
     """Run main race simulation with all bots."""
     print(f"==> Running race simulation for {num_laps} laps...")
     race_config = os.path.join(folder_name, "race_sim.xml")
     
     # Generate config with all racing bots
-    racegen.generate_race_xml(race_config, num_laps)
+    racegen.generate_race_xml(race_config, num_laps, iteration=iteration, change_order=change_order)
     
     cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
     subprocess.check_call(cmd, shell=True)
@@ -138,6 +138,8 @@ def main():
     parser.add_argument("--plots", action="store_true", help="enable plots (default: no plots)")
     parser.add_argument("--repetitions", type=int, default=1,
                         help="Number of times to run the race+analysis (default=1).")
+    parser.add_argument("--change_order", type=bool, default=True,
+                        help="change the order of bots for each iteration (default=True).")
     args = parser.parse_args()
 
     # The usual torcs raceman directory from utils:
@@ -156,7 +158,7 @@ def main():
     for i in range(args.repetitions):
         print(f"\n=== Simulation iteration {i+1}/{args.repetitions} ===")
         try:
-            run_race_simulation(folder_name, args.num_laps)
+            run_race_simulation(folder_name, args.num_laps, i, args.change_order)
         except subprocess.CalledProcessError as e:
             print(f"Error running race simulation: {e}")
             sys.exit(1)
