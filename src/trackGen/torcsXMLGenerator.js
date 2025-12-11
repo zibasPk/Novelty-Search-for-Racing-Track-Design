@@ -386,6 +386,9 @@ export class TorcsXMLGenerator {
     };
   }
 
+  getLength() {
+    return this.sections.reduce((acc, s) => acc + (s.type === 'straight' ? s.length : (s.radius * (s.angle * Math.PI / 180))), 0) * this.trackScale;
+  }
 
 }
 

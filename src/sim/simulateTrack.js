@@ -11,6 +11,8 @@ import {
   DOCKER_IMAGE_NAME,
   MEMORY_LIMIT,
   SIMULATION_TIMEOUT,
+  MEAN_CAR_SPEED,
+  TARGET_RACE_DURATION,
   OUTPUT_DIR_XML
 } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
@@ -62,6 +64,7 @@ export async function simulate(
   log.info(`SEED: ${seed}`);
   log.info(`MODE: ${mode}`);
   log.info(`trackSize: ${trackSize}`);
+  log.info('TrackLength:', xmlGenerator.getLength().toFixed(2));
 
   let containerId;
   let timeoutId;
@@ -72,7 +75,9 @@ export async function simulate(
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
     log.info(trackGenOutput);
 
-    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export -r 5 --json ${plot ? '' : '--plots'}`;
+    const numOfLaps = Math.ceil( TARGET_RACE_DURATION / (xmlGenerator.getLength() / MEAN_CAR_SPEED));
+
+    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export -r ${numOfLaps} --json ${plot ? '' : '--plots'}`;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
@@ -164,7 +169,7 @@ export async function simulate(
   } finally {
     clearTimeout(timeoutId);
     if (containerId) {
-      // await stopDockerContainer(containerId);
+      await stopDockerContainer(containerId);
     }
   }
 }

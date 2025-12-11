@@ -13,7 +13,7 @@ log.setLevel("info");
 const app = express();
 
 // --- 2. ENABLE CORS HERE ---
-// This allows your frontend (likely on port 3000) to access this API
+// This allows frontends to access this API ( both web and jupyter notebook )
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:8888']
 }));

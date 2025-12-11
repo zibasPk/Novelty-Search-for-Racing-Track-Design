@@ -3,7 +3,7 @@ export const BBOX = { xl: 0, xr: 600, yt: 0, yb: 600 };
 export const MODE = 'convexHull'; // voronoi or convexHull
 export const NUMBER_OF_VORONOI_SITES = 100;
 export const MAX_NUMBER_OF_SELECTED_CELLS = 10;
-export const DOCKER_IMAGE_NAME = 'torcs';
+export const DOCKER_IMAGE_NAME = 'torcs:speed';
 export const MAPELITE_PATH = './src/utils/mapelite.xml';
 export const MEMORY_LIMIT = '2000m';
 export const OUTPUT_DIR = './data/voronoi'
@@ -16,7 +16,8 @@ export const JSON_DEBUG = true;
 export const SIMULATION_TIMEOUT = 60000;
 
 export const DEFAULT_TRACK_SCALE = 2.0;
-
+export const MEAN_CAR_SPEED = 26.8; // in m/s
+export const TARGET_RACE_DURATION = 360; // in seconds
 export const COLORS = {
   SEPARATION_LINE: [255, 0, 0],
   VORONOI: [180, 192, 165],    // Sage
