@@ -169,12 +169,7 @@ def fitness_formula(fit):
         _upd(k, v)
 
     # Calculate normalized score
-    score = (
-        0.25 * _norm('len',  length) +  # encourage longer tracks
-        0.60 * _norm('bend', bend_ratio) +  # maximise curves per metre
-        0.15 * (_norm('ov',  overtakes) /
-                (_norm('dx', dx) + 1e-3))  # overtakes, damped by Δx
-    )
+    score = overtakes
     return float(score)
 
 def evaluate_solution(sol):

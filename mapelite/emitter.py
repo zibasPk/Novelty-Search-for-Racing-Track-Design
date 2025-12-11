@@ -7,10 +7,7 @@ import random
 from ribs.emitters import EmitterBase
 
 from config import BASE_URL, BATCH_SIZE, INIT_POPULATION, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE
-from utils import (
-    generate_solution, solution_to_array, array_to_solution, get_fractional_part, 
-    evaluate_solution 
-)
+import utils
 
 class CustomEmitter(EmitterBase):
     """
@@ -36,8 +33,8 @@ class CustomEmitter(EmitterBase):
             
             # Here we fill up one dask batch_size if it's <= INIT_POPULATION
             for _ in range(self.batch_size):
-                sol = generate_solution(self.iteration - 1)
-                arr = solution_to_array(sol)
+                sol = utils.generate_solution(self.iteration - 1)
+                arr = utils.solution_to_array(sol)
                 if arr is not None:
                     out.append(arr)
                 else:
@@ -62,7 +59,7 @@ class CustomEmitter(EmitterBase):
         
         for i in range(self.batch_size):
             arr = parents["solution"][i]
-            sol = array_to_solution(arr)
+            sol = utils.array_to_solution(arr)
             
             try:
                 response = requests.post(
@@ -78,10 +75,10 @@ class CustomEmitter(EmitterBase):
                 mutated = response.json().get("mutated", {})
                 
                 # Assign a unique, iteration-based ID for tracking
-                frac = get_fractional_part(sol["id"])
+                frac = utils.get_fractional_part(sol["id"])
                 mutated["id"] = self.iteration - 1 + frac
                 
-                mutated_arr = solution_to_array(mutated)
+                mutated_arr = utils.solution_to_array(mutated)
                 
                 if mutated_arr is not None:
                     out.append(mutated_arr)
@@ -106,8 +103,8 @@ class CustomEmitter(EmitterBase):
                 # 1. Sample two distinct parents
                 while True:
                     parents = self.archive.sample_elites(2)
-                    sol1 = array_to_solution(parents["solution"][0])
-                    sol2 = array_to_solution(parents["solution"][1])
+                    sol1 = utils.array_to_solution(parents["solution"][0])
+                    sol2 = utils.array_to_solution(parents["solution"][1])
                     if sol1["id"] != sol2["id"]:
                         break
                         
@@ -128,8 +125,8 @@ class CustomEmitter(EmitterBase):
                 # 3. Create two new children (assuming crossover produces 2, though the API returns 1 'offspring' as one merged result)
                 # Note: The original logic only extracts one 'offspring' dict, let's stick to generating one solution per loop iteration (total BATCH_SIZE // 2 iterations)
                 
-                f1 = get_fractional_part(sol1["id"])
-                f2 = get_fractional_part(sol2["id"])
+                f1 = utils.get_fractional_part(sol1["id"])
+                f2 = utils.get_fractional_part(sol2["id"])
                 frac = (f1 + f2) % 1
                 child_id = self.iteration - 1 + frac
                 
@@ -141,7 +138,7 @@ class CustomEmitter(EmitterBase):
                     "selectedCells": offspring.get("sel", [])
                 }
                 
-                child_arr = solution_to_array(child_sol)
+                child_arr = utils.solution_to_array(child_sol)
                 
                 if child_arr is not None:
                     out.append(child_arr)
