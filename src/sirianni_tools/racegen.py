@@ -109,3 +109,41 @@ def generate_race_xml(path, num_laps=10, iteration=0, change_order=True):
     
     with open(path, "w") as f:
         f.write(xml)
+        
+        
+        
+def generate_lap_count_xml(path):
+    """Generate XML for track export (1 lap, trackexporter only)"""
+    xml = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE params SYSTEM "../libs/tgf/params.dtd">
+
+<params name="Quick Race" type="param" mode="mw">
+    <section name="Tracks">
+        <section name="1">
+            <attstr name="name" val="output"/>
+            <attstr name="category" val="road"/>
+        </section>
+    </section>
+
+    <section name="Races">
+        <section name="1">
+            <attstr name="name" val="Quick Race"/>
+        </section>
+    </section>
+
+    <section name="Quick Race">
+        <attnum name="laps" val="2"/>
+        <attstr name="type" val="race"/>
+        <attstr name="starting order" val="random"/>
+    </section>
+
+    <section name="Drivers">
+        <section name="1">
+            <attnum name="idx" val="2"/>
+            <attstr name="module" val="olethros"/>
+        </section>
+    </section>
+</params>'''
+    
+    with open(path, "w") as f:
+        f.write(xml)

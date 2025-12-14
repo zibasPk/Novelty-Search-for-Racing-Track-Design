@@ -29,7 +29,42 @@ def run_track_export(folder_name):
     cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
     subprocess.check_call(cmd, shell=True)
     os.remove(race_config)
-
+   
+def clear_logs():
+    """Clear existing logs in the torcs log path."""
+    log_path = utils.torcsLogPath
+    if os.path.exists(log_path):
+        for filename in os.listdir(log_path):
+            file_path = os.path.join(log_path, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error deleting log file {file_path}: {e}")   
+    
+def run_lap_num_sim(folder_name, target_duration):
+    """Run a single lap with only one car to decide number of laps."""
+    print("==> Running lap number simulation...")
+    race_config = os.path.join(folder_name, "lap_num_sim.xml")
+    
+    # Generate config with only trackexporter
+    racegen.generate_lap_count_xml(race_config)
+    
+    cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
+    subprocess.check_call(cmd, shell=True)
+    os.remove(race_config)
+    
+    output = run_analysis(no_plots=True, json_output=True)
+    # Parse output to find number of laps
+    parsed_output = parse_analysis_json(output)
+    lap_times = parsed_output.get("lap_times", 1)
+    
+    lap_time = None
+    if isinstance(lap_times, dict) and '2' in lap_times:
+        lap_time = lap_times['2'] 
+    
+    
+    return math.ceil(target_duration / lap_time)
 
 def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
     """Run main race simulation with all bots."""
@@ -130,7 +165,7 @@ def average_metrics(all_results):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-r", "--num_laps", type=int, default=0,
-                        help="number of laps to simulate (default: 0 means no race).")
+                        help="number of laps to simulate (default 0 means no race).")
     parser.add_argument("--track-export", action="store_true",
                         help="run single-lap track export (with trackexporter bot).")
     parser.add_argument("--json", action="store_true",
@@ -138,6 +173,8 @@ def main():
     parser.add_argument("--plots", action="store_true", help="enable plots (default: no plots)")
     parser.add_argument("--repetitions", type=int, default=1,
                         help="Number of times to run the race+analysis (default=1).")
+    parser.add_argument("-d","--target_duration", type=int, 
+                        help="Target simulation duration in seconds.")
     parser.add_argument("--change_order", type=bool, default=True,
                         help="change the order of bots for each iteration (default=True).")
     args = parser.parse_args()
@@ -152,12 +189,16 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Error running track export: {e}")
             sys.exit(1)
-    
+            
+    if args.target_duration is not None:
+        args.num_laps = run_lap_num_sim(folder_name, args.target_duration)
+        print(f"Number of laps to simulate was calculated: {args.num_laps}")
     # 2) run multiple races and accumulate the results
     aggregated_results = []
     for i in range(args.repetitions):
         print(f"\n=== Simulation iteration {i+1}/{args.repetitions} ===")
         try:
+            clear_logs() 
             run_race_simulation(folder_name, args.num_laps, i, args.change_order)
         except subprocess.CalledProcessError as e:
             print(f"Error running race simulation: {e}")

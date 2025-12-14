@@ -15,6 +15,7 @@ import overtakes
 import positions
 import track
 import utils
+import laptimes  # Added import
 
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,8 +56,8 @@ for path in args.paths:
     utils.printHeading("Analyzing track and track dynamics")
     # Get track data if available
 
-    log_filename = os.path.basename(log_list[0])  # e.g., 'output_20230425.csv'
-    track_name = log_filename.split("_")[0].split(".")[0] # 'output'
+    log_filename = os.path.basename(log_list[0])
+    track_name = log_filename.split("_")[0].split(".")[0]
 
     track_path = os.path.join(utils.torcsTrackDirectory, f"{track_name}.csv")
     print(f"Track path: {track_path}")
@@ -134,6 +135,14 @@ for path in args.paths:
     start100 = positions.makePositionsVariationsPlotsFromLogList(
         os.getcwd() + "/" + folder_name, log_list[0], track_length, 1, drivers_list, not args.no_plots)
 
+    utils.printHeading("Analyzing lap times")
+    # Compute lap times per lap number
+    lap_times_per_lap = laptimes.compute_lap_times(
+        os.getcwd() + "/" + folder_name,
+        log_list,
+        track_length
+    )
+
     def get_entropy_metrics(block_data):
         """Compute all entropy metrics with proper error handling."""
         metrics = {}
@@ -166,7 +175,8 @@ for path in args.paths:
             'positions_var': positions_variations[1] if len(positions_variations) > 1 else 0,
             'gaps_mean': gaps_distribution[0] if gaps_distribution else 0,
             'gaps_var': gaps_distribution[1] if len(gaps_distribution) > 1 else 0,
-            'total_overtakes': total_overtakes
+            'total_overtakes': total_overtakes,
+            'lap_times': lap_times_per_lap  # New metric: Dictionary of avg time per lap
         }
 
         # Add track metrics if available

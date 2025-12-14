@@ -17,6 +17,7 @@ torcsLogPath = "/root/.torcs/logs/"
 torcsTrackDirectory = "/root/.torcs/tracks/"
 torcsRacemanDirectory = "/usr/local/share/games/torcs/config/raceman/"
 maxBendRadius = 1200
+targetSimDuration = 360  # seconds
 
 @enum.unique
 class SegmentType(enum.Enum):
