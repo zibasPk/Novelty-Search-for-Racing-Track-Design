@@ -78,6 +78,89 @@ export function findMaxCurveBeforeStraight(track, segmentLength) {
 }
 
 /**
+ * Return an index of the longest straight segment in the track.
+ * "Longest" is defined by physical distance, not number of points.
+ * 
+ * @param {Array<{x: number, y: number}>} track - Array of point objects
+ * @param {number} curvatureThreshold - Max deviation in radians (0 = perfectly straight)
+ * @param {number} indexPos - number between 0 and 1 to offset the returned index within the segment (0=start, 0.5=middle, 1=end)
+ * @returns {number} The index of the middle point of the longest straight section
+ */
+export function findLongestStraightSegment(track, curvatureThreshold, indexPos = 0.5) {
+  // Edge cases: not enough points to form a segment
+  if (!track || track.length < 2) return 0;
+
+  let maxDistance = 0;
+  let longestSegmentMidIndex = 0;
+
+  let currentStartIndex = 0;
+  let currentDistance = 0;
+
+  // Helper to calculate distance between two points
+  const getDist = (p1, p2) => Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+  // Helper to calculate angle deviation (0 to PI)
+  const getDeviation = (p1, p2, p3) => {
+    // Vector 1 (p1 -> p2)
+    const dx1 = p2.x - p1.x;
+    const dy1 = p2.y - p1.y;
+    // Vector 2 (p2 -> p3)
+    const dx2 = p3.x - p2.x;
+    const dy2 = p3.y - p2.y;
+
+    // Calculate angles
+    const angle1 = Math.atan2(dy1, dx1);
+    const angle2 = Math.atan2(dy2, dx2);
+
+    // Calculate difference
+    let diff = Math.abs(angle1 - angle2);
+
+    // Normalize to [0, PI] (handle wrap-around, e.g. 359° vs 1°)
+    if (diff > Math.PI) {
+      diff = 2 * Math.PI - diff;
+    }
+    
+    return diff;
+  };
+
+  // Iterate through the track
+  // We start at 1 because we need a previous point to measure a vector
+  for (let i = 1; i < track.length; i++) {
+    // Add the distance of the latest step (i-1 to i) to current tally
+    currentDistance += getDist(track[i - 1], track[i]);
+
+    // Check curvature
+    // We can only check curvature if we have a 'next' point (i+1)
+    let isCurveTooSharp = false;
+
+    if (i < track.length - 1) {
+      const deviation = getDeviation(track[i - 1], track[i], track[i + 1]);
+      if (deviation > curvatureThreshold) {
+        isCurveTooSharp = true;
+      }
+    }
+
+    // If the curve is too sharp, or we are at the very end of the array
+    if (isCurveTooSharp || i === track.length - 1) {
+      // Check if this run was the longest found so far
+      if (currentDistance > maxDistance) {
+        maxDistance = currentDistance;
+        // Calculate middle index between start of this segment and current point
+        
+        longestSegmentMidIndex = Math.floor((currentStartIndex + i) * indexPos);
+      }
+
+      // Reset for next segment
+      // The new segment technically starts at the point where the curve happened (i)
+      currentStartIndex = i;
+      currentDistance = 0;
+    }
+  }
+
+  return longestSegmentMidIndex;
+}
+
+/**
  * Calculate curvature of a sequence of three points in the track starting at index i.
  * @param {*} track 
  * @param {*} i 

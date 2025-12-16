@@ -31,12 +31,14 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 
 	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
 
-	// let splineTrack = utils.splineSmoothingWithStraights(trackGenerator.trackEdges);
-
 	// process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
-	const segmentLength = 10;
-	const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
-	splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
+	// const segmentLength = 10;
+	// const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
+	// let splineTrack1 = splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
+
+	const minIndex2 = utils.findLongestStraightSegment(splineTrack, 0.01, 0.5);
+	let splineTrack2 = splineTrack.slice(minIndex2).concat(splineTrack.slice(0, minIndex2));
+	splineTrack = splineTrack2; 
 
 	let splineVector = utils.resamplePoints(splineTrack);
 	if (saveJSON) {

@@ -167,7 +167,7 @@ export async function simulate(
   } finally {
     clearTimeout(timeoutId);
     if (containerId) {
-      // await stopDockerContainer(containerId);
+      await stopDockerContainer(containerId);
     }
   }
 }
