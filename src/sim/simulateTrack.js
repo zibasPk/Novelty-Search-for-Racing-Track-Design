@@ -75,7 +75,7 @@ export async function simulate(
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
     log.info(trackGenOutput);
 
-    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e `;
+    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e `;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
@@ -92,7 +92,7 @@ export async function simulate(
         .trim();
       rawMetrics = JSON.parse(jsonString);
     } else {
-      throw new Error('JSON markers not found in run-simulations.py output.');
+      throw new Error('JSON markers not found in run_simulations.py output.');
     }
     const { length, deltaX, deltaY, deltaAngleDegrees } = parseTrackgenOutput(trackGenOutput);
     const {

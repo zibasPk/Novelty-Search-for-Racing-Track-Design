@@ -111,12 +111,12 @@ def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
 def run_analysis(no_plots=True, json_output=True, embedding=False):
     """
     Run analysis script on the logs, returning output as string.
-    By default uses JSON output from analyze-simulations.py.
+    By default uses JSON output from analyze_simulations.py.
     """
     print("==> Analyzing logs...")
     cmd = [
         "python3",
-        "/usr/local/lib/sirianni_tools/analyze-simulations.py",
+        "/usr/local/lib/sirianni_tools/analyze_simulations.py",
         "-B", "200"
     ]
 
