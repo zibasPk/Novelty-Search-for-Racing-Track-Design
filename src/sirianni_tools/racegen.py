@@ -112,8 +112,8 @@ def generate_race_xml(path, num_laps=10, iteration=0, change_order=True):
         
         
         
-def generate_lap_count_xml(path):
-    """Generate XML for track export (1 lap, trackexporter only)"""
+def generate_benchmark_xml(path):
+    """Generate XML for benchmark race 1 bot (olethros) racing alone for 2 laps"""
     xml = '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE params SYSTEM "../libs/tgf/params.dtd">
 

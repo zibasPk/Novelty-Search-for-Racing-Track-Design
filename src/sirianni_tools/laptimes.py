@@ -91,3 +91,42 @@ def compute_lap_times(folder, log_list, track_length):
             avg_times[str(lap_num)] = sum(times) / len(times)
             
     return avg_times
+
+
+# fall back function (not used)
+# def compute_lap_times(trackName, trackData):
+#     lap_times = defaultdict(float)
+#     log_files = sorted([f for f in os.listdir(utils.torcsLogPath)
+#                        if f.startswith(trackName) and f.endswith('_dynamics.csv')])
+
+#     if not log_files:
+#         return lap_times
+
+#     with open(os.path.join(utils.torcsLogPath, log_files[-1]), 'r') as csvfile:
+#         data = csv.reader(csvfile, delimiter=',')
+#         start_time = 0.0
+#         last_time = 0.0
+#         current_lap = -1
+
+#         for row in data:
+#             time = float(row[0])
+#             lap = int(row[12])
+
+#             if lap <= 0:
+#                 continue
+
+#             if current_lap == -1:
+#                 current_lap = lap
+#                 start_time = time
+
+#             if lap != current_lap:
+#                 lap_times[current_lap] = last_time - start_time
+#                 start_time = time
+#                 current_lap = lap
+
+#             last_time = time
+
+#         if current_lap != -1:
+#             lap_times[current_lap] = last_time - start_time
+
+#     return lap_times

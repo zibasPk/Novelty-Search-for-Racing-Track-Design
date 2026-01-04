@@ -41,6 +41,18 @@ def clear_logs():
                     os.unlink(file_path)
             except Exception as e:
                 print(f"Error deleting log file {file_path}: {e}")   
+  
+def run_benchmark_sim(folder_name):
+    """Run benchmark simulation with one bot for various measurement."""
+    print("==> Running benchmark simulation...")  
+    race_config = os.path.join(folder_name, "lap_num_sim.xml")
+    
+    # Generate config with only trackexporter
+    racegen.generate_benchmark_xml(race_config)
+    
+    cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
+    subprocess.check_call(cmd, shell=True)
+    os.remove(race_config)
     
 def run_lap_num_sim(folder_name, target_duration):
     """Run a single lap with only one car to decide number of laps."""
@@ -48,7 +60,7 @@ def run_lap_num_sim(folder_name, target_duration):
     race_config = os.path.join(folder_name, "lap_num_sim.xml")
     
     # Generate config with only trackexporter
-    racegen.generate_lap_count_xml(race_config)
+    racegen.generate_benchmark_xml(race_config)
     
     cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
     subprocess.check_call(cmd, shell=True)
@@ -66,6 +78,24 @@ def run_lap_num_sim(folder_name, target_duration):
     
     return math.ceil(target_duration / lap_time)
 
+def run_embedding_simulation(folder_name):
+    """Run two lap simulation (takes the second lap data) with one car for track embedding."""
+    print("==> Running track embedding simulation...")
+    race_config = os.path.join(folder_name, "embedding_sim.xml")
+    
+    # Generate config with only trackexporter
+    racegen.generate_benchmark_xml(race_config)
+    
+    cmd = f"{utils.torcsCommand} -r {os.path.join(os.getcwd(), race_config)}"
+    subprocess.check_call(cmd, shell=True)
+    os.remove(race_config)
+    
+    output = run_analysis(no_plots=True, json_output=True)
+    # Parse output to find number of laps
+    parsed_output = parse_analysis_json(output)
+    embedding = parsed_output.get("track_embedding", None)
+    return embedding
+
 def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
     """Run main race simulation with all bots."""
     print(f"==> Running race simulation for {num_laps} laps...")
@@ -78,7 +108,7 @@ def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
     subprocess.check_call(cmd, shell=True)
     print("Race simulation completed.")
     
-def run_analysis(no_plots=True, json_output=True):
+def run_analysis(no_plots=True, json_output=True, embedding=False):
     """
     Run analysis script on the logs, returning output as string.
     By default uses JSON output from analyze-simulations.py.
@@ -95,6 +125,9 @@ def run_analysis(no_plots=True, json_output=True):
 
     if json_output:
         cmd.append("--json-output")
+        
+    if embedding:
+        cmd.append("--track-embedding")
     # We assume logs are in utils.torcsLogPath, e.g. /root/.torcs/logs
     cmd.append(utils.torcsLogPath)
 
@@ -173,26 +206,45 @@ def main():
     parser.add_argument("--plots", action="store_true", help="enable plots (default: no plots)")
     parser.add_argument("--repetitions", type=int, default=1,
                         help="Number of times to run the race+analysis (default=1).")
-    parser.add_argument("-d","--target_duration", type=int, 
+    parser.add_argument("-d","--target-duration", type=int, 
                         help="Target simulation duration in seconds.")
-    parser.add_argument("--change_order", type=bool, default=True,
+    parser.add_argument("--change-order", type=bool, default=True,
                         help="change the order of bots for each iteration (default=True).")
+    parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data")
     args = parser.parse_args()
 
     # The usual torcs raceman directory from utils:
     folder_name = utils.torcsRacemanDirectory
 
-    # 1) Possibly do track export first
+    # 1) possibly run track export and benchmark simulations
     if args.track_export:
         try:
             run_track_export(folder_name)
         except subprocess.CalledProcessError as e:
             print(f"Error running track export: {e}")
             sys.exit(1)
+    
+    should_run_benchmark = args.target_duration is not None or args.track_embedding  
+    embedding_data = None
+    if should_run_benchmark:
+        try:
+            run_benchmark_sim(folder_name)
+        except subprocess.CalledProcessError as e:
+            print(f"Error running benchmark simulation: {e}")
+            sys.exit(1)
+        analysis_output = run_analysis(no_plots=True, json_output=True, embedding=args.track_embedding)
+        parsed = parse_analysis_json(analysis_output)
+        
+        if args.target_duration is not None:
+            lap_times = parsed.get("lap_times", 1)
+            lap_time = lap_times['2']
             
-    if args.target_duration is not None:
-        args.num_laps = run_lap_num_sim(folder_name, args.target_duration)
-        print(f"Number of laps to simulate was calculated: {args.num_laps}")
+            args.num_laps = math.ceil(args.target_duration / lap_time) 
+            print(f"Number of laps to simulate was calculated: {args.num_laps}")
+        
+        if args.track_embedding:
+            embedding_data = parsed.get("track_embedding", None)
+                     
     # 2) run multiple races and accumulate the results
     aggregated_results = []
     for i in range(args.repetitions):
@@ -222,6 +274,7 @@ def main():
     # 3) After finishing all races+analyses, average the results
     if aggregated_results:
         avg_res = average_metrics(aggregated_results)
+        avg_res['embedding_data'] = embedding_data
         # Print final JSON
         final_json = json.dumps(avg_res, indent=2)
         print("===FINAL_JSON_START===")

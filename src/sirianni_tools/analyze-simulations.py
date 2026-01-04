@@ -16,6 +16,7 @@ import positions
 import track
 import utils
 import laptimes  # Added import
+import track_embedding
 
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,6 +35,8 @@ parser.add_argument("paths", nargs="+",
                     help="the list of paths which contain the simulation logs")
 parser.add_argument("--no-plots", action="store_true", 
                     help="skip plot generation")
+parser.add_argument("-e", "--track-embedding", action="store_true", 
+                    help="generate and return data for track embedding")
 args = parser.parse_args()
 
 for path in args.paths:
@@ -142,6 +145,14 @@ for path in args.paths:
         log_list,
         track_length
     )
+    
+    embedding_data = None
+    if args.track_embedding:
+        utils.printHeading("Generating track embedding data")
+        try:
+            embedding_data = track_embedding.generate(track_name)
+        except Exception as e:
+            print(f"Warning: Error generating track embedding data: {e}")
 
     def get_entropy_metrics(block_data):
         """Compute all entropy metrics with proper error handling."""
@@ -192,7 +203,10 @@ for path in args.paths:
             # Add entropy metrics
             entropy_metrics = get_entropy_metrics(block_data)
             raw_metrics.update(entropy_metrics)
-            
+         
+        if args.track_embedding:
+            raw_metrics['track_embedding'] = embedding_data 
+           
         print("===JSON_START===")
         print(json.dumps(raw_metrics, indent=2))
         print("===JSON_END===")
