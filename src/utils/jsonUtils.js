@@ -114,7 +114,8 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
       gaps_var: fitness.gaps_var,
       left_bends: fitness.left_bends,
       positions_var: fitness.positions_var,
-      curvature_entropy: fitness.curvature_entropy
+      curvature_entropy: fitness.curvature_entropy,
+      embedding_data: fitness.embedding_data
     },
     // Preserve points data if available.
     dataSet: originalPoints.dataSet || [],

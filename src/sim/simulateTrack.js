@@ -20,13 +20,13 @@ import log from "loglevel";
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`Command failed: ${error.message}`));
+        reject(new Error(`${error.message}`));
         return;
       }
       if (stderr) {
-        console.warn(`stderr: ${stderr}`);
+        log.warn(`stderr: ${stderr}`);
       }
       resolve(stdout.trim());
     });
@@ -138,31 +138,11 @@ export async function simulate(
         seed,
         mode,
         trackResults.generator.trackSize,
-        {
-          length: fitness.track_length || fitness.length,
-          deltaX: fitness.deltaX,
-          deltaY: fitness.deltaY,
-          deltaAngleDegrees: fitness.deltaAngleDegrees,
-          speed_entropy: fitness.speed_entropy,
-          acceleration_entropy: fitness.acceleration_entropy,
-          braking_entropy: fitness.braking_entropy,
-          positions_mean: fitness.positions_mean,
-          avg_radius_mean: fitness.avg_radius_mean,
-          gaps_mean: fitness.gaps_mean,
-          right_bends: fitness.right_bends,
-          avg_radius_var: fitness.avg_radius_var,
-          total_overtakes: fitness.total_overtakes,
-          straight_sections: fitness.straight_sections,
-          gaps_var: fitness.gaps_var,
-          left_bends: fitness.left_bends,
-          positions_var: fitness.positions_var,
-          curvature_entropy: fitness.curvature_entropy
-        }
+        fitness
       );
     }
     return { fitness: fitness, splineVector: trackResults.splineVector };
   } catch (err) {
-    console.error(`Error: ${err.message}`);
     throw err;
   } finally {
     clearTimeout(timeoutId);
@@ -173,9 +153,10 @@ export async function simulate(
 }
 
 async function startDockerContainer(seed) {
-  let containterName = "track_simulation_" + seed;
+  let randomSuffix = Math.random().toString(36).substring(2, 7);
+  let containterName = "track_simulation_" + seed + "_" + randomSuffix;
   const containerId = await executeCommand(
-    `docker run -d -it --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME}`
+    `docker run -d --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME} sleep infinity`
   );
   log.info(`Docker container started with ID: ${containerId}`);
   await executeCommand(

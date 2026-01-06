@@ -54,5 +54,4 @@ RUN ./configure --disable-xrandr --x-libraries=/usr/lib/ \
 # Set the working directory to the default directory
 WORKDIR /root
 
-# Entry point
-ENTRYPOINT ["/bin/bash"]
+CMD ["/bin/bash"]
