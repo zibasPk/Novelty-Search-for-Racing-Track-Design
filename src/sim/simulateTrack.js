@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import { generateTrack } from '../trackGen/trackGenerator.js';
-import {TorcsXMLGenerator} from '../trackGen/torcsXMLGenerator.js';
+import { TorcsXMLGenerator } from '../trackGen/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
 import os from 'os';
@@ -69,11 +69,13 @@ export async function simulate(
   let containerId;
   let timeoutId;
   try {
+    log.debug(`Starting Docker container for simulation ${seed}`);
     containerId = await startDockerContainer(seed);
-   
+
     // Move track XML to Docker container and generate track files
+    log.debug(`Generating and moving track files to Docker container for ${seed}`);
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
-    log.info(trackGenOutput);
+    log.debug(trackGenOutput);
 
     const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e `;
     const simulationOutput = await Promise.race([
@@ -82,7 +84,7 @@ export async function simulate(
         timeoutId = setTimeout(() => reject(new SimulationTimeoutError()), SIMULATION_TIMEOUT)
       )
     ]);
-  
+
     let rawMetrics = {};
     const jsonStart = simulationOutput.indexOf('===FINAL_JSON_START===');
     const jsonEnd = simulationOutput.indexOf('===FINAL_JSON_END===', jsonStart);
@@ -170,7 +172,7 @@ async function stopDockerContainer(containerId) {
     await executeCommand(`docker rm --force ${containerId}`);
     log.info(`Docker container ${containerId} stopped and removed.`);
   } catch (err) {
-    console.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
+    log.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
   }
 }
 
@@ -214,5 +216,5 @@ function parseTrackgenOutput(trackgenOutput) {
 }
 
 if (process.argv[1].includes('simulateTrack.js')) {
-  simulate().catch(err => console.error(`Unhandled error: ${err.message}`));
+  simulate().catch(err => log.error(`Unhandled error: ${err.message}`));
 }

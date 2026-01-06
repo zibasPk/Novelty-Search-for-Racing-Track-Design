@@ -1,9 +1,9 @@
 import { simulate } from './simulateTrack.js';
-import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
-import log from "loglevel"
+import { JSON_DEBUG, SIMULATION_TIMEOUT, LOG_DIR } from '../utils/constants.js';
+import { initLogger } from '../utils/logger.js';
 
-const TOTAL_SIMULATIONS = 100;
-const CONCURRENCY_LIMIT = 5; // Number of parallel simulations
+const TOTAL_SIMULATIONS = 20000;
+const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
 
 async function runSimulation(simulationIndex) {
   try {
@@ -22,7 +22,8 @@ async function runSimulation(simulationIndex) {
       )
     ]);
 
-    log.info(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
+    log.info(`Simulation ${simulationIndex} completed.`);
+    log.trace(`fitness: ${JSON.stringify(fitness)}`);
     return fitness;
   } catch (error) {
     log.error(`Error in simulation ${simulationIndex}: ${error.message}`);
@@ -41,4 +42,15 @@ async function runSimulations() {
   await Promise.all(simulationPromises); // Await any remaining simulations
 }
 
-runSimulations().catch(err => console.error(`Unexpected error: ${err.message}`));
+
+// setup logging
+let dateTime = new Date().toISOString().replace(/:/g, '-');
+let logPath = LOG_DIR +`ParallelTest_${dateTime}.log`;
+
+let log = initLogger({
+  filePath: logPath,
+  level: "info",
+  withTimestamp: true
+});
+
+runSimulations().catch(err => log.error(`Unexpected error: ${err.message}`));

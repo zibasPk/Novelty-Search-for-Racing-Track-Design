@@ -4,11 +4,21 @@ import { generateTrack } from '../trackGen/trackGenerator.js';
 import { crossover, crossover2 } from '../genetic/crossoverVoronoi.js';
 import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull.js';
 import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
-import { BBOX, JSON_DEBUG } from '../utils/constants.js';
+import { BBOX, JSON_DEBUG,LOG_DIR } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
-import log from "loglevel";
+import { initLogger } from '../utils/logger.js';
 
-log.setLevel("info");
+
+// setup logging
+let dateTime = new Date().toISOString().replace(/:/g, '-');
+let logPath = LOG_DIR +`Api_${dateTime}.log`;
+
+let log = initLogger({
+  filePath: logPath,
+  level: "debug",
+  withTimestamp: true
+});
+
 
 const app = express();
 
@@ -50,7 +60,7 @@ app.post('/generate', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error in /generate:', error);
+    log.error(`/generate for ${req.body.id}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -72,7 +82,7 @@ app.post('/genforweb', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error in /generate:', error);
+    log.error(`/generate for ${req.body.id}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -98,10 +108,14 @@ app.post('/evaluate', async (req, res) => {
       fitness: simulationResult.fitness,
       splineVector: simulationResult.splineVector
     });
+    let resultsToPrint = simulationResult.fitness;
+    if (resultsToPrint.embedding_data) {
+      resultsToPrint.embedding_data = simulationResult.fitness.embedding_data.length; 
+    }
     log.info('Returning fitness from /evaluate: ',
-      JSON.stringify(simulationResult.fitness));
+      JSON.stringify(resultsToPrint));
   } catch (error) {
-    log.error('Error in /evaluate:', error);
+    log.error(`/evaluate for ${req.body.id}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -175,7 +189,7 @@ app.post('/crossover', async (req, res, next) => {
     const result = crossoverConvexHull(trackGenerator1, trackGenerator2, true);
     res.json({ offspring: { ds: result.ds } });
   } catch (error) {
-    console.error('Error in /crossover:', error);
+    log.error(`/crossover for ${req.body.parent1.id} and ${req.body.parent2.id}:`, error);
     next(error);
   }
 });
@@ -219,19 +233,18 @@ app.post('/mutate', async (req, res, next) => {
 
     res.status(400).json({ error: 'Invalid track generation mode in /mutate' });
   } catch (error) {
-    console.error('Error in /mutate:', error);
+    log.error(`/mutate for ${req.body.individual.id}:`, error);
     next(error);
   }
 });
 
 
-log.setLevel("info");
 
 /* ─────────────────────────────────────────────────────────────
    Global error handler
    ──────────────────────────────────────────────────────────── */
 app.use((error, req, res, next) => {
-  console.error('Error:', error);
+  log.error('Error:', error);
   res.status(500).json({ error: 'Internal server error' });
 });
 
