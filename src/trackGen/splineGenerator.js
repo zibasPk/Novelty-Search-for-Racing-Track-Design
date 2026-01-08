@@ -3,6 +3,8 @@ export function splineSmoothing(spline) {
   for (let i = 0; i < 10; i++) {
     spline = generateCatmullRomSpline(spline, 5, i * 10);
     spline = pushApart(spline, 20);
+    // hotfix for some edge cases where it gets stuck 
+    if (spline.length <= 1) throw new Error('Spline too short after pushApart');
     spline = fixAngles(spline);
   }
   spline = generateCatmullRomSpline(spline, 20, 0);
