@@ -2,6 +2,21 @@ import json
 import numpy as np
 from pathlib import Path
 from sklearn.impute import SimpleImputer
+import sys
+import os
+
+cwd = os.getcwd()
+print(f"Current Working Directory: {cwd}")
+
+# Define the path to the 'mapelite' folder
+# We assume the notebook is running from the root 'Quality-Diversity-...' folder
+mapelite_path = os.path.join(cwd, 'mapelite')
+
+# Add it to the system path so Python can find config.py, utils.py, etc.
+if mapelite_path not in sys.path:
+    sys.path.append(mapelite_path)
+    print(f"Added '{mapelite_path}' to sys.path")
+
 import utils
 
 
@@ -15,7 +30,6 @@ def create_flattened_dataset(source_folder, output_file, max_files=None):
         return
 
     json_files = list(source_path.glob("*.json"))
-    print(f"Found {len(json_files)} files. Flattening...")
 
     no_spline_count = 0
     nan_spline_count = 0
@@ -91,9 +105,9 @@ def create_flattened_dataset(source_folder, output_file, max_files=None):
 if __name__ == "__main__":
     SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/dataset10k.npz'
+    OUTPUT_NAME = 'data/datasets/tsne/dataset4k.npz'
 
     # Ensure output directory exists
-    Path('data').mkdir(parents=True, exist_ok=True)
+    Path('data/datasets/tsne').mkdir(parents=True, exist_ok=True)
 
-    create_flattened_dataset(SOURCE_DIR, OUTPUT_NAME, 10000)
+    create_flattened_dataset(SOURCE_DIR, OUTPUT_NAME, 4000)
