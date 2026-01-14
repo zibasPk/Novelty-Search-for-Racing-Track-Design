@@ -52,9 +52,7 @@ function smallestAngle2D(a, b) {
 }
 
 function segToSegMinDistance(a1, a2, b1, b2) {
-  
 
-  // 2. If no intersection, distance is the min distance of the 4 endpoints
   const d1 = pointToSegmentDistance(a1, b1, b2);
   const d2 = pointToSegmentDistance(a2, b1, b2);
   const d3 = pointToSegmentDistance(b1, a1, a2);
@@ -159,3 +157,4 @@ log.info("Overlap Test Results:", results);
 log.info(`Processed ${fileCount} files.`);
 log.info(`Total tracks with self-overlap: ${results.length}`);
 log.info("Overlapped Track IDs:", overLappedResults);
+log.info("Tracks with strict overlap count:", overLappedResults.length);

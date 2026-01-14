@@ -29,32 +29,32 @@ import fs from 'fs/promises';
 // }
 
 // for all files in the data / voronoi / fitted folder generate the xml file
-const fittedDir = 'data/voronoi/fitted/';
-const files = await fs.readdir(fittedDir);
-log.setLevel("info");
+// const fittedDir = 'data/voronoi/fitted/';
+// const files = await fs.readdir(fittedDir);
+// log.setLevel("info");
 
-for (const file of files) {
-  if (file.endsWith('.json')) {
-    const filePath = fittedDir + file;
-    const data = await fs.readFile(filePath, 'utf-8');
-    const trackData = JSON.parse(data);
+// for (const file of files) {
+//   if (file.endsWith('.json')) {
+//     const filePath = fittedDir + file;
+//     const data = await fs.readFile(filePath, 'utf-8');
+//     const trackData = JSON.parse(data);
 
-    genJsonAndXml(trackData);
-  }
-}
+//     genJsonAndXml(trackData);
+//   }
+// }
 
 
 // load from data/voronoi/json the file named 123.json and generate the xml file
-// const jsonDir = 'data/voronoi/json/';
-// const filename = '109.59621462502487.json';
-// const filePath = jsonDir + filename;
+const jsonDir = 'data/voronoi/fitted/';
+const filename = '2.130719712495899.json';
+const filePath = jsonDir + filename;
 
-// const data = await fs.readFile(filePath, 'utf-8');
-// const trackData = JSON.parse(data);
+const data = await fs.readFile(filePath, 'utf-8');
+const trackData = JSON.parse(data);
 
-// log.setLevel("debug");
+log.setLevel("debug");
 
-// genJsonAndXml(trackData);
+genJsonAndXml(trackData);
 
 
 async function genJsonAndXml(trackData) {

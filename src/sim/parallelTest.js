@@ -7,13 +7,13 @@ const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
 
 async function runSimulation(simulationIndex) {
   try {
-    log.info(`Starting simulation ${simulationIndex}`);
+    
 
     // Generate random parameters for the simulation
     const mode = Math.random() < 0.5 ? 'voronoi' : 'convexHull';
     const trackSize = mode === 'voronoi' ? Math.ceil(Math.random() * 4) + 1 : 50;
     const seed = Math.random();
-
+    log.info(`Starting simulation ${simulationIndex} with seed ${seed}`);
     // Run the simulation
     const { fitness } = await Promise.race([
       simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false),

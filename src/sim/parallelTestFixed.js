@@ -2,12 +2,13 @@
 //with fixed params
 
 import { simulate } from './simulateTrack.js';
-import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../utils/constants.js';
+import { JSON_DEBUG, SIMULATION_TIMEOUT, LOG_DIR} from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
-import log from "loglevel";
+import { initLogger } from '../utils/logger.js';
 
-const STARTING_SEED = 0;
-const TOTAL_UNIQUE_TRACKS = 2000;
+const STARTING_SEED = 21300;
+// const STARTING_SEED = 0;
+const TOTAL_UNIQUE_TRACKS = 40000;
 const REPETITIONS_PER_TRACK = 1;
 const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
 
@@ -27,9 +28,9 @@ async function runSimulation(simulationIndex) {
     // Run the simulation
     const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false);
 
-    log.info(`Simulation ${simulationIndex} completed. Fitness:`, fitness);
+    log.trace(`fitness: ${JSON.stringify(fitness)}`);
     let endTime = Date.now();
-    log.info(`Simulation ${simulationIndex} execution time: ${(endTime - startTime) / 1000} seconds`);
+    log.info(`Simulation ${simulationIndex} completed in: ${(endTime - startTime) / 1000} seconds`);
     return fitness;
   } catch (error) {
     log.error(`Error in simulation ${simulationIndex}: ${error.message}`);
@@ -57,6 +58,12 @@ async function runSimulations() {
   }
 }
 
+let dateTime = new Date().toISOString().replace(/:/g, '-');
+let logPath = LOG_DIR +`ParallelTest_${dateTime}.log`;
 
-log.setLevel("debug");
+let log = initLogger({
+  filePath: logPath,
+  level: "info",
+  withTimestamp: true
+});
 runSimulations().catch(err => console.error(`Unexpected error: ${err.message}`));

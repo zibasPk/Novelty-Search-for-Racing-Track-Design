@@ -3,7 +3,7 @@ import { simulate } from '../../sim/simulateTrack.js';
 import { JSON_DEBUG, SIMULATION_TIMEOUT, } from '../constants.js';
 import { SimulationTimeoutError } from '../errors.js';
 import log from "loglevel";
-
+import fs from 'fs/promises';
 
 async function runSimulation(simulationIndex) {
   try {
@@ -28,6 +28,12 @@ async function runSimulation(simulationIndex) {
 }
 
 log.setLevel("debug");
-let fitness = await runSimulation(100);
+runSimulation(100);
+// const jsonDir = 'data/voronoi/json/';
+// const filename = '807.0753345551605.json';
+// const filePath = jsonDir + filename;
 
-log.info(`Final fitness for simulation 195: ${fitness}`);
+// const data = await fs.readFile(filePath, 'utf-8');
+// const trackData = JSON.parse(data);
+
+// const { fitness } = await simulate("voronoi", trackData.selectedCells.length, trackData.dataSet, trackData.selectedCells, '807.0753345551605', JSON_DEBUG);

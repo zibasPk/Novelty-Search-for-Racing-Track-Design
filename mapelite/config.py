@@ -21,7 +21,7 @@ INVALID_SCORE = -1e9
 
 # --- Archive Parameters ---
 ARCHIVE_BINS = 30  # cells per axis
-REMAPPING_EVERY = 200  # move boundaries every 200 insertions
+REMAPPING_EVERY = 100  # remap archive every N iterations
 BUFFER_SIZE = 1000  # keep last 1000 solutions
 
 # --- Checkpointing and Debugging ---
