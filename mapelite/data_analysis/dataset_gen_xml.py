@@ -118,42 +118,26 @@ def create_dataset(xml_source_folder, json_source_folder, output_file, max_files
     if not dataset:
         print("No data collected. Exiting.")
         return
-    # Pad sequences to have the same length and create a mask
-    padded_dataset = []
-    masks = []
-    
-    for track in dataset:
-        length = len(track)
-        if length <= 5: # 5 is arbitrarily chosen minimum length
-            continue  
-        pad_length = max_track_len - length
+  
+    # flatten the dataset and create an index array
+    flattened_dataset = np.concatenate(dataset, axis=0)
+    lengths = np.array([len(track) for track in dataset])
+    index_array = np.cumsum(lengths[:-1])
         
-        if pad_length > 0:
-            padded_track = np.pad(track, ((0, pad_length), (0, 0)), mode='constant')
-        else:
-            padded_track = track
-            
-        padded_dataset.append(padded_track)
-
-        mask = np.zeros(max_track_len, dtype=bool)
-        mask[:length] = True # Set valid indices to True
-        masks.append(mask)
-        
-    padded_dataset = np.array(padded_dataset)
-    masks = np.array(masks)
+ 
     ids = np.array(ids)
     print ("longest track length (in segments): ", max_track_len)
     print (f"Total tracks skipped due to insufficient length: {tracks_skipped}")
-    np.savez_compressed(output_file, data=padded_dataset, masks=masks, ids=ids)
+    np.savez_compressed(output_file, data=flattened_dataset, indices=index_array, ids=ids)
 
 
 if __name__ == "__main__":
     XML_SOURCE_DIR = 'data/voronoi/xmlTracks'
     JSON_SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/xml/dataset5k.npz'
+    OUTPUT_NAME = 'data/datasets/xml/dataset10k.npz'
 
     # Ensure output directory exists
     Path('data/datasets/xml').mkdir(parents=True, exist_ok=True)
 
-    create_dataset(XML_SOURCE_DIR,JSON_SOURCE_DIR, OUTPUT_NAME, 5000)
+    create_dataset(XML_SOURCE_DIR,JSON_SOURCE_DIR, OUTPUT_NAME, 10000)
