@@ -71,7 +71,7 @@ app.post('/genforweb', async (req, res) => {
     const { id, mode, trackSize } = req.body;
 
     const { track, generator, splineVector } =
-      await generateTrack(mode, BBOX, id, trackSize, JSON_DEBUG);
+      await generateTrack(mode, BBOX, id, trackSize, false);
 
     const response = {
       mode,
