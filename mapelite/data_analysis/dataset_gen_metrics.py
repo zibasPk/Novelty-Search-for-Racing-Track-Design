@@ -67,23 +67,13 @@ def create_dataset(source_folder, output_file, max_files=None):
         print("No data collected. Exiting.")
         return
 
-    # Pad sequences to the same length
-    data_to_save = []
-    masks = []
-    for metrics in dataset:
-        length = len(metrics)
-        if length < max_length:
-            pad_width = ((0, max_length - length), (0, 0))
-            padded_metrics = np.pad(metrics, pad_width, mode='constant', constant_values=0)
-            mask = np.concatenate([np.ones(length, dtype=bool), np.zeros(max_length - length, dtype=bool)])
-        else:
-            padded_metrics = metrics
-            mask = np.ones(max_length, dtype=bool)
-        data_to_save.append(padded_metrics)
-        masks.append(mask)
+    # flatten the dataset and create an index array
+    flattened_dataset = np.concatenate(dataset, axis=0)
+    lengths = np.array([len(track) for track in dataset])
+    index_array = np.cumsum(lengths[:-1])
+        
     
-    
-    np.savez_compressed(output_file, data=data_to_save, masks=masks, ids=sourceIDs)
+    np.savez_compressed(output_file, data=flattened_dataset, indices=index_array, ids=sourceIDs)
 
     print(f"Success! Created a dataset with {len(dataset)} flattened rows.")
     print(f"Max embedding length: {max_length}")
@@ -93,9 +83,9 @@ def create_dataset(source_folder, output_file, max_files=None):
 if __name__ == "__main__":
     SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/metrics/dataset4k.npz'
+    OUTPUT_NAME = 'data/datasets/metrics/dataset10k.npz'
 
     # Ensure output directory exists
     Path('data/datasets/metrics').mkdir(parents=True, exist_ok=True)
 
-    create_dataset(SOURCE_DIR, OUTPUT_NAME, 4000)
+    create_dataset(SOURCE_DIR, OUTPUT_NAME, 10000)
