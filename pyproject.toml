@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapelite"
+version = "0.1.0"
+description = "Quality Diversity for Racing Track Design Using MAP-Elites"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Martino Piaggi", email = "martino.piaggi@gmail.com"},
+    {name = "Milo Brontesi", email = "milo.brontesi@gmail.com"}
+]
+dependencies = [
+    "numpy",
+    "requests",
+    "joblib",
+    "ribs[all]>=0.8.0",
+    "umap-learn",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "matplotlib",
+    "seaborn"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "isort",
+    "flake8",
+    "jupyter",
+    "notebook"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mapelite*"]
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 88
