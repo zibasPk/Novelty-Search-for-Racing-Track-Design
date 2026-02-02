@@ -24,6 +24,18 @@ MSc thesis project to evolve diverse, high‑quality racing tracks with MAP‑El
 - Evaluate: headless races; telemetry (speed, curvature, overtakes, incidents, closure error)
 - Analyze: aggregate, cluster, export to visualizer
 
+
+## How to run
+Requires Docker and Python 3.8+.
+
+1. In root folder:
+    - `pip install -e .[dev]` (to install python dependencies)
+2. In src folder:
+    - `docker build -t torcs:dev .` (to build TORCS image)
+    - `npm install` (install dependencies for api)
+3. To run the algorithm use the notebook `mapelite/mapelite.ipynb`.
+
+
 ## Borrowable bits
 
 - Voronoi genotype + crossovers (Random‑Line Partitioning, Relative Reconstruction)

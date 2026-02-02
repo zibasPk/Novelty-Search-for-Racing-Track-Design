@@ -23,15 +23,17 @@ dependencies = [
     "scikit-learn",
     "pandas",
     "matplotlib",
-    "seaborn"
+    "seaborn",
+    "dash",
+    "plotly",
+    "torch",
+    "tqdm"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
     "black",
     "isort",
-    "flake8",
     "jupyter",
     "notebook"
 ]

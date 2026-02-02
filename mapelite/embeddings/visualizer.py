@@ -10,8 +10,8 @@ from pathlib import Path
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DATASETS_FOLDER = Path("datasets/embeddings/good")
-TRACKS_FILE = Path("datasets/tracks.npz")
+DATASETS_FOLDER = Path(__file__).parent / "datasets/embeddings/good"
+TRACKS_FILE = Path(__file__).parent / "datasets/tracks.npz"
 DEFAULT_MAX_POINTS = 9000
 
 # ==========================================
