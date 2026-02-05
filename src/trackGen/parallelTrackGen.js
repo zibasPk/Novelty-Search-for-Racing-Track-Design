@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { generateTrack } from '../trackGen/trackGenerator.js';
+import { generateTrack } from './trackGenerator.js';
 import log from "loglevel";
 import {
   BBOX
