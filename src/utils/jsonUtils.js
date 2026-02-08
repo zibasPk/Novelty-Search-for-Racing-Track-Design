@@ -115,7 +115,12 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
       left_bends: fitness.left_bends,
       positions_var: fitness.positions_var,
       curvature_entropy: fitness.curvature_entropy,
-      embedding_data: fitness.embedding_data
+      embedding_data: fitness.embedding_data,
+      speed_trace: fitness.speed_trace,
+      accel_trace: fitness.accel_trace,
+      steer_trace: fitness.steer_trace,
+      brake_trace: fitness.brake_trace
+
     },
     // Preserve points data if available.
     dataSet: originalPoints.dataSet || [],

@@ -17,9 +17,10 @@ import track
 import utils
 import laptimes  # Added import
 import track_embedding
+import traces
 
-logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 __author__ = "Jacopo Sirianni"
 __copyright__ = "Copyright 2015-2016, Jacopo Sirianni"
@@ -27,22 +28,22 @@ __license__ = "GPL"
 __email__ = "jacopo.sirianni@mail.polimi.it"
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("-B", "--max-block-len", type=int, default=200, 
+parser.add_argument("-B", "--max-block-len", type=int, default=200,
                     help="the maximum block's length (used for the heatmaps and the segment data file, default: %(default)s)")
-parser.add_argument("--json-output", action="store_true", 
+parser.add_argument("--json-output", action="store_true",
                     help="Output raw metrics in JSON format")
-parser.add_argument("paths", nargs="+", 
+parser.add_argument("paths", nargs="+",
                     help="the list of paths which contain the simulation logs")
-parser.add_argument("--no-plots", action="store_true", 
+parser.add_argument("--no-plots", action="store_true",
                     help="skip plot generation")
-parser.add_argument("-e", "--track-embedding", action="store_true", 
+parser.add_argument("-e", "--track-embedding", action="store_true",
                     help="generate and return data for track embedding")
 args = parser.parse_args()
 
 for path in args.paths:
     folder_name = os.path.relpath(path).rstrip("/")
     print("\033[94m>>> Analyzing " + folder_name + "...\033[0m")
-    
+
     utils.printHeading("Reading initialization data")
 
     log_list = utils.getLogList(folder_name)
@@ -93,7 +94,7 @@ for path in args.paths:
 
     # These analyses work without track data
     utils.printHeading("Analyzing positions and gaps")
-    
+
     # Handle track length consistently
     track_length = None
     try:
@@ -145,7 +146,7 @@ for path in args.paths:
         log_list,
         track_length
     )
-    
+
     embedding_data = None
     if args.track_embedding:
         utils.printHeading("Generating track embedding data")
@@ -157,18 +158,18 @@ for path in args.paths:
     def get_entropy_metrics(block_data):
         """Compute all entropy metrics with proper error handling."""
         metrics = {}
-        
+
         if block_data is None:
             logging.warning("No block data available - skipping entropy metrics")
             return metrics
-            
+
         entropy_functions = {
             'speed_entropy': entropy.compute_speed_entropy,
             'curvature_entropy': entropy.compute_curvature_entropy,
             'acceleration_entropy': entropy.compute_acceleration_entropy,
             'braking_entropy': entropy.compute_braking_entropy
         }
-        
+
         for metric_name, entropy_func in entropy_functions.items():
             try:
                 value = entropy_func(block_data)
@@ -176,9 +177,9 @@ for path in args.paths:
             except Exception as e:
                 logging.error(f"Error computing {metric_name}: {str(e)}")
                 metrics[metric_name] = 0.0
-                
+
         return metrics
-    
+
     # JSON output with available metrics
     if args.json_output:
         raw_metrics = {
@@ -199,14 +200,26 @@ for path in args.paths:
                 'avg_radius_mean': np.mean(track_data[6]) if len(track_data) > 6 and track_data[6] else 0,
                 'avg_radius_var': np.var(track_data[6]) if len(track_data) > 6 and track_data[6] else 0,
             })
-            
+
             # Add entropy metrics
             entropy_metrics = get_entropy_metrics(block_data)
             raw_metrics.update(entropy_metrics)
-         
+
         if args.track_embedding:
-            raw_metrics['track_embedding'] = embedding_data 
-           
+            raw_metrics['embedding_data'] = embedding_data
+            speed_dist_trace = traces.get_trace(
+                folder_name, track_name, utils.dynamicsLogColumns.speed.value)
+            accel_dist_trace = traces.get_trace(
+                folder_name, track_name, utils.dynamicsLogColumns.accel.value)
+            steer_dist_trace = traces.get_trace(
+                folder_name, track_name, utils.dynamicsLogColumns.steer.value)
+            brake_dist_trace = traces.get_trace(
+                folder_name, track_name, utils.dynamicsLogColumns.brake.value)
+            raw_metrics['speed_trace'] = speed_dist_trace
+            raw_metrics['accel_trace'] = accel_dist_trace
+            raw_metrics['steer_trace'] = steer_dist_trace
+            raw_metrics['brake_trace'] = brake_dist_trace
+
         print("===JSON_START===")
         print(json.dumps(raw_metrics, indent=2))
         print("===JSON_END===")

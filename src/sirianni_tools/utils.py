@@ -20,6 +20,24 @@ maxBendRadius = 1200
 targetSimDuration = 360  # seconds
 
 @enum.unique
+class dynamicsLogColumns(enum.Enum):
+    timestamp = 0
+    driver_name = 1
+    car_name = 2
+    driver_idx = 3
+    speed = 5
+    segment_distance = 6 # distance within the current segment
+    left_border_dist = 7
+    center_dist = 8
+    right_border_dist = 9
+    lap_distance = 11 # distance from the start of the track (current lap)
+    lap = 12
+    steer = 22
+    accel = 23
+    brake = 24
+    gear = 25
+
+@enum.unique
 class SegmentType(enum.Enum):
     none = 0
     left = 1

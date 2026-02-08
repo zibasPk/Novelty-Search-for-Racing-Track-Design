@@ -194,6 +194,12 @@ def average_metrics(all_results):
 
     return averages
 
+def print_final_results(final_result):
+    final_json = json.dumps(final_result, indent=2)
+    print("===FINAL_JSON_START===")
+    print(final_json)
+    print("===FINAL_JSON_END===")
+    print("All repetitions done! Exiting now.")
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -210,13 +216,13 @@ def main():
                         help="Target simulation duration in seconds.")
     parser.add_argument("--change-order", type=bool, default=True,
                         help="change the order of bots for each iteration (default=True).")
-    parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data")
+    parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data, when enabled, the script will only run the embedding simulation and analysis..")
     args = parser.parse_args()
 
     # The usual torcs raceman directory from utils:
     folder_name = utils.torcsRacemanDirectory
 
-    # 1) possibly run track export and benchmark simulations
+    # track export is necessary to get track geometry used in later analyses
     if args.track_export:
         try:
             run_track_export(folder_name)
@@ -224,8 +230,8 @@ def main():
             print(f"Error running track export: {e}")
             sys.exit(1)
     
+    # Only run benchmark if we need to determine num_laps or its specified to get track embeddings
     should_run_benchmark = args.target_duration is not None or args.track_embedding  
-    embedding_data = None
     if should_run_benchmark:
         try:
             run_benchmark_sim(folder_name)
@@ -243,7 +249,9 @@ def main():
             print(f"Number of laps to simulate was calculated: {args.num_laps}")
         
         if args.track_embedding:
-            embedding_data = parsed.get("track_embedding", None)
+            print_final_results(parsed)
+            return  
+            
                      
     # 2) run multiple races and accumulate the results
     aggregated_results = []
@@ -271,19 +279,16 @@ def main():
                 print(f"Error running analysis: {e}")
                 sys.exit(1)
 
+    final_result = {}
     # 3) After finishing all races+analyses, average the results
     if aggregated_results:
         avg_res = average_metrics(aggregated_results)
-        avg_res['embedding_data'] = embedding_data
-        # Print final JSON
-        final_json = json.dumps(avg_res, indent=2)
-        print("===FINAL_JSON_START===")
-        print(final_json)
-        print("===FINAL_JSON_END===")
+        final_result = avg_res
+        print_final_results(final_result) 
     else:
         print("Warning: No valid analysis results to average.")
+        
     
-    print("All repetitions done! Exiting now.")
 
 if __name__ == "__main__":
     main()

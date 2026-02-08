@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
@@ -10,296 +10,294 @@ from pathlib import Path
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DATASETS_FOLDER = Path(__file__).parent / "datasets/embeddings/good"
-TRACKS_FILE = Path(__file__).parent / "datasets/tracks.npz"
+BASE_DIR = Path(__file__).parent
+DATASETS_FOLDER = BASE_DIR / "datasets/embeddings/good"
+TRACKS_FILE = BASE_DIR / "datasets/tracks.npz"
+FITNESS_FILE = BASE_DIR / "datasets/fitness_dict.npz"
+
 DEFAULT_MAX_POINTS = 9000
 
 # ==========================================
-# 2. HELPER FUNCTIONS
+# 2. DATA LOADING & HELPERS
 # ==========================================
+
+# 2.1 Load Tracks
+if TRACKS_FILE.exists():
+    raw_tracks_file = np.load(TRACKS_FILE, allow_pickle=True)
+    tracks_dict = dict(raw_tracks_file)
+    print(f"Loaded {len(tracks_dict)} tracks.")
+else:
+    tracks_dict = {}
+    print(f"ERROR: {TRACKS_FILE} not found.")
+
+# 2.2 Load Fitness Data
+fitness_data = None
+scalar_metrics = []
+trace_metrics = ["speed_trace", "accel_trace", "steer_trace", "brake_trace"]
+
+if FITNESS_FILE.exists():
+    try:
+        fitness_data = np.load(FITNESS_FILE, allow_pickle=True)
+        if len(fitness_data.files) > 0:
+            first_id = fitness_data.files[0]
+            first_entry = fitness_data[first_id].item()
+            scalar_metrics = sorted([k for k, v in first_entry.items() if isinstance(v, (int, float))])
+            print(f"Loaded fitness. Scalar metrics: {len(scalar_metrics)}")
+    except Exception as e:
+        print(f"Error loading fitness file: {e}")
+
+# 2.3 Helper: Interpolate Trace Data to Track Geometry
+def interpolate_metrics_to_track(track_xy, trace_data):
+    if not trace_data or len(trace_data) < 2: return None
+    
+    # Cumulative distance of track geometry
+    deltas = np.diff(track_xy, axis=0)
+    seg_lengths = np.sqrt((deltas ** 2).sum(axis=1))
+    track_dist = np.insert(np.cumsum(seg_lengths), 0, 0)
+    
+    # Trace data
+    trace_arr = np.array(trace_data)
+    t_values = trace_arr[:, 0]
+    t_dists = trace_arr[:, 1]
+    
+    return np.interp(track_dist, t_dists, t_values)
+
+# 2.4 Load Embeddings
 def get_available_datasets():
-    """Scan the datasets folder and return a list of available .npz files."""
-    if not DATASETS_FOLDER.exists():
-        print(f"Warning: Datasets folder '{DATASETS_FOLDER}' not found.")
-        return []
+    if not DATASETS_FOLDER.exists(): return []
     return sorted([f.name for f in DATASETS_FOLDER.glob("*.npz")])
 
 def load_dataset(filename):
-    """Load a dataset file and return embeddings and IDs."""
     filepath = DATASETS_FOLDER / filename
-    if not filepath.exists():
-        return None, None
+    if not filepath.exists(): return None, None
     data = np.load(filepath)
-    embeddings = data["embeddings"]
-    ids = data["ids"]
-    return embeddings, ids
+    return data["embeddings"], data["ids"]
 
-def prepare_dataframe(latents, raw_ids, max_points=DEFAULT_MAX_POINTS):
-    """Prepare and optionally downsample the dataframe."""
+def prepare_dataframe(latents, raw_ids, max_points, selected_metric):
     df = pd.DataFrame(latents, columns=['Latent_X', 'Latent_Y'])
     df['ID'] = [str(x) for x in raw_ids]
     
+    if selected_metric and fitness_data and selected_metric != "None":
+        values = []
+        for uid in df['ID']:
+            if uid in fitness_data:
+                values.append(fitness_data[uid].item().get(selected_metric, np.nan))
+            else:
+                values.append(np.nan)
+        df[selected_metric] = values
+    
     if max_points and len(df) > max_points:
-        print(f"Downsampling from {len(df)} to {max_points} to prevent WebGL crash...")
-        return df.sample(n=max_points, random_state=42)
+        df = df.sample(n=max_points, random_state=42)
     return df
 
-def create_latent_figure(df_plot, title_suffix="", highlight_id=None):
-    """Create the latent space scatter plot figure."""
-    # Create color column for highlighting
-    if highlight_id:
-        df_plot = df_plot.copy()
-        df_plot['highlight'] = df_plot['ID'].apply(lambda x: 'Searched' if x == highlight_id else 'Normal')
-        color_map = {'Searched': 'red', 'Normal': 'steelblue'}
-        fig = px.scatter(
-            df_plot, 
-            x='Latent_X', 
-            y='Latent_Y', 
-            hover_name='ID',
-            color='highlight',
-            color_discrete_map=color_map,
-            title=f"Latent Space ({len(df_plot)} samples){title_suffix}",
-            template="plotly_dark",
-            render_mode='webgl'
-        )
-        # Make searched point larger
-        fig.for_each_trace(
-            lambda trace: trace.update(marker=dict(size=15, opacity=1.0)) if trace.name == 'Searched' else trace.update(marker=dict(size=8, opacity=0.7))
-        )
-    else:
-        fig = px.scatter(
-            df_plot, 
-            x='Latent_X', 
-            y='Latent_Y', 
-            hover_name='ID',
-            title=f"Latent Space ({len(df_plot)} samples){title_suffix}",
-            template="plotly_dark",
-            render_mode='webgl'
-        )
-        fig.update_traces(
-            marker=dict(size=8, opacity=0.7, line=dict(width=0.5, color='White'))
-        )
-    
-    fig.update_traces(customdata=df_plot['ID'])
-    fig.update_layout(
-        clickmode='event+select',
-        margin=dict(l=20, r=20, t=40, b=20)
-    )
-    return fig
-
 # ==========================================
-# 3. LOAD INITIAL DATA
+# 3. LAYOUT
 # ==========================================
-print("Loading data...")
+datasets = get_available_datasets()
+init_ds = datasets[0] if datasets else None
 
-# Load tracks dictionary
-raw_tracks_file = np.load(TRACKS_FILE, allow_pickle=True)
-tracks_dict = dict(raw_tracks_file)
-print(f"Loaded {len(tracks_dict)} tracks.")
+opt_ds = [{'label': d, 'value': d} for d in datasets]
+opt_scalar = [{'label': "None (Blue)", 'value': "None"}] + [{'label': m, 'value': m} for m in scalar_metrics]
+opt_trace = [{'label': "None (Solid Color)", 'value': "None"}] + \
+            [{'label': t.replace('_trace', '').capitalize(), 'value': t} for t in trace_metrics]
 
-# Get available datasets
-available_datasets = get_available_datasets()
-print(f"Found {len(available_datasets)} datasets: {available_datasets}")
-
-# Load initial dataset (first one available, or empty)
-initial_df = pd.DataFrame(columns=['Latent_X', 'Latent_Y', 'ID'])
-initial_dataset = available_datasets[0] if available_datasets else None
-
-if initial_dataset:
-    latents, raw_ids = load_dataset(initial_dataset)
-    if latents is not None:
-        initial_df = prepare_dataframe(latents, raw_ids)
-        print(f"Initial dataset '{initial_dataset}': {len(initial_df)} samples")
-
-# ==========================================
-# 4. INITIALIZE DASH APP
-# ==========================================
 app = dash.Dash(__name__)
 
-# Create dropdown options
-dropdown_options = [{'label': ds, 'value': ds} for ds in available_datasets]
-
-# ==========================================
-# 5. LAYOUT
-# ==========================================
 app.layout = html.Div([
-    html.H1("Latent Space Explorer", style={'fontFamily': 'Arial', 'textAlign': 'center', 'color': '#333'}),
+    html.H2("Voronoi Evolution Explorer", style={'fontFamily': 'sans-serif', 'textAlign': 'center', 'color': '#333'}),
     
-    # Controls Row
+    # --- TOP CONTROLS ---
     html.Div([
-        # Dataset Selector
         html.Div([
-            html.Label("Dataset: ", style={'fontWeight': 'bold', 'marginRight': '10px', 'color': '#333'}),
-            dcc.Dropdown(
-                id='dataset-dropdown',
-                options=dropdown_options,
-                value=initial_dataset,
-                style={'width': '300px', 'display': 'inline-block', 'verticalAlign': 'middle'}
-            ),
-        ], style={'display': 'inline-block', 'marginRight': '30px'}),
+            html.Label("Dataset:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(id='dataset-dropdown', options=opt_ds, value=init_ds, clearable=False),
+        ], style={'width': '20%', 'display': 'inline-block', 'padding': '5px'}),
         
-        # Sample Count Selector
         html.Div([
-            html.Label("Max Samples: ", style={'fontWeight': 'bold', 'marginRight': '10px', 'color': '#333'}),
-            dcc.Input(
-                id='sample-count-input',
-                type='number',
-                value=DEFAULT_MAX_POINTS,
-                min=100,
-                max=50000,
-                step=100,
-                style={'width': '100px', 'verticalAlign': 'middle'}
-            ),
-        ], style={'display': 'inline-block', 'marginRight': '30px'}),
+            html.Label("Color Latent By:", style={'fontWeight': 'bold'}),
+            dcc.Dropdown(id='color-metric-dropdown', options=opt_scalar, value="None", clearable=False),
+        ], style={'width': '20%', 'display': 'inline-block', 'padding': '5px'}),
+
+        html.Div([
+            html.Label("Max Samples:", style={'fontWeight': 'bold'}),
+            dcc.Input(id='sample-count', type='number', value=DEFAULT_MAX_POINTS, step=500),
+        ], style={'width': '10%', 'display': 'inline-block', 'padding': '5px', 'verticalAlign': 'top'}),
         
-        # ID Search
         html.Div([
-            html.Label("Search ID: ", style={'fontWeight': 'bold', 'marginRight': '10px', 'color': '#333'}),
-            dcc.Input(
-                id='id-search-input',
-                type='text',
-                placeholder='Enter track ID...',
-                debounce=True,
-                style={'width': '200px', 'verticalAlign': 'middle'}
-            ),
-            html.Span(id='search-status', style={'marginLeft': '10px', 'color': '#666'})
-        ], style={'display': 'inline-block'}),
-    ], style={'textAlign': 'center', 'marginBottom': '20px'}),
-    
+            html.Label("Search ID:", style={'fontWeight': 'bold'}),
+            dcc.Input(id='search-input', type='text', placeholder='ID...', debounce=True),
+        ], style={'width': '15%', 'display': 'inline-block', 'padding': '5px', 'verticalAlign': 'top'}),
+    ], style={'backgroundColor': '#f4f4f4', 'padding': '10px', 'borderRadius': '5px', 'marginBottom': '10px'}),
+
+    # --- MAIN VIEW ---
     html.Div([
-        # Left: Latent Space
+        # LEFT: Latent Space
         html.Div([
-            dcc.Graph(id='latent-graph', figure=create_latent_figure(initial_df), style={'height': '70vh'})
+            dcc.Graph(id='latent-graph', style={'height': '85vh'})
         ], style={'width': '58%', 'display': 'inline-block', 'verticalAlign': 'top'}),
 
-        # Right: Track View
+        # RIGHT: Track View & Details
         html.Div([
-            dcc.Graph(id='track-graph', style={'height': '70vh'})
-        ], style={'width': '40%', 'display': 'inline-block', 'verticalAlign': 'top', 'paddingLeft': '2%'})
-    ], style={'display': 'flex', 'flexDirection': 'row'})
+            # 1. Track Graph
+            html.Div([
+                html.Label("Overlay Metric:", style={'fontWeight': 'bold', 'marginRight': '5px'}),
+                dcc.Dropdown(id='track-metric-dropdown', options=opt_trace, value="speed_trace", clearable=False, style={'width': '50%', 'display': 'inline-block'}),
+            ], style={'padding': '5px', 'backgroundColor': '#f9f9f9', 'borderBottom': '1px solid #ccc'}),
+            
+            dcc.Graph(id='track-graph', style={'height': '40vh'}),
+            
+            # 2. Histogram
+            dcc.Graph(id='trace-histogram', style={'height': '20vh', 'marginTop': '5px'}),
+            
+            # 3. Scalar Stats Table
+            html.H4("Fitness Details", style={'margin': '10px 0 5px 0', 'borderBottom': '1px solid #ccc'}),
+            html.Div(id='fitness-table-container', style={'height': '20vh', 'overflowY': 'auto', 'padding': '5px', 'backgroundColor': '#222', 'color': 'white', 'fontSize': '0.9em'})
+            
+        ], style={'width': '40%', 'display': 'inline-block', 'verticalAlign': 'top', 'borderLeft': '1px solid #ccc', 'paddingLeft': '10px'})
+    ], style={'display': 'flex', 'marginTop': '0px'})
 ])
 
 # ==========================================
-# 6. CALLBACKS
+# 4. CALLBACKS
 # ==========================================
 
-# Callback to update latent graph when dataset, sample count, or search changes
+# --- 4.1 Update Latent Space ---
 @app.callback(
-    [Output('latent-graph', 'figure'),
-     Output('search-status', 'children')],
+    Output('latent-graph', 'figure'),
     [Input('dataset-dropdown', 'value'),
-     Input('sample-count-input', 'value'),
-     Input('id-search-input', 'value')]
+     Input('sample-count', 'value'),
+     Input('search-input', 'value'),
+     Input('color-metric-dropdown', 'value')]
 )
-def update_latent_graph(selected_dataset, max_samples, search_id):
-    """Load the selected dataset and update the latent space plot."""
-    search_status = ""
-    
-    if not selected_dataset:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(
-            title="No dataset selected",
-            template="plotly_dark",
-            xaxis={'visible': False},
-            yaxis={'visible': False}
-        )
-        return empty_fig, search_status
-    
-    latents, raw_ids = load_dataset(selected_dataset)
-    if latents is None:
-        empty_fig = go.Figure()
-        empty_fig.update_layout(
-            title=f"Error loading dataset: {selected_dataset}",
-            template="plotly_dark",
-            xaxis={'visible': False},
-            yaxis={'visible': False}
-        )
-        return empty_fig, search_status
-    
-    # Use provided max_samples or default
-    max_points = max_samples if max_samples else DEFAULT_MAX_POINTS
-    df_plot = prepare_dataframe(latents, raw_ids, max_points=max_points)
-    print(f"Loaded dataset '{selected_dataset}': {len(df_plot)} samples")
-    
-    # Handle ID search
-    highlight_id = None
-    if search_id:
-        search_id = str(search_id).strip()
-        if search_id in df_plot['ID'].values:
-            highlight_id = search_id
-            search_status = f"✓ Found ID: {search_id}"
-        else:
-            # Check if it exists in the full dataset but was downsampled out
-            all_ids = [str(x) for x in raw_ids]
-            if search_id in all_ids:
-                search_status = f"⚠ ID exists but not in current sample. Try increasing max samples."
-            else:
-                search_status = f"✗ ID not found: {search_id}"
-    
-    return create_latent_figure(df_plot, f" - {selected_dataset}", highlight_id=highlight_id), search_status
+def update_latent(dataset, max_samples, search_id, color_col):
+    if not dataset: return go.Figure()
+    latents, raw_ids = load_dataset(dataset)
+    if latents is None: return go.Figure()
 
-# Callback to display track on click
+    df = prepare_dataframe(latents, raw_ids, max_samples, color_col)
+    
+    highlight_id = str(search_id).strip() if search_id else None
+    title = f"Latent Space: {dataset}"
+
+    if color_col and color_col != "None" and color_col in df.columns:
+        fig = px.scatter(
+            df, x='Latent_X', y='Latent_Y', hover_name='ID',
+            color=color_col, color_continuous_scale='Turbo',
+            template='plotly_dark', title=title
+        )
+        fig.update_traces(marker=dict(size=5, opacity=0.8))
+        if highlight_id and highlight_id in df['ID'].values:
+            target = df[df['ID'] == highlight_id]
+            fig.add_trace(go.Scatter(x=target['Latent_X'], y=target['Latent_Y'], mode='markers',
+                marker=dict(size=15, color='rgba(0,0,0,0)', line=dict(color='white', width=3)), hoverinfo='skip', showlegend=False))
+    else:
+        fig = px.scatter(df, x='Latent_X', y='Latent_Y', hover_name='ID', template='plotly_dark', title=title)
+        fig.update_traces(marker=dict(color='steelblue', size=6))
+        if highlight_id and highlight_id in df['ID'].values:
+             target = df[df['ID'] == highlight_id]
+             fig.add_trace(go.Scatter(x=target['Latent_X'], y=target['Latent_Y'], mode='markers',
+                marker=dict(size=12, color='red'), name='Selected'))
+
+    fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_traces(customdata=df['ID'])
+    return fig
+
+# --- 4.2 Update Track + Hist + Table ---
 @app.callback(
-    Output('track-graph', 'figure'),
-    Input('latent-graph', 'clickData')
+    [Output('track-graph', 'figure'),
+     Output('trace-histogram', 'figure'),
+     Output('fitness-table-container', 'children')],
+    [Input('latent-graph', 'clickData'),
+     Input('track-metric-dropdown', 'value')]
 )
-def display_track(clickData):
-    # Empty state configuration
-    empty_fig = go.Figure()
-    empty_fig.update_layout(
-        title="Click a point on the left to view track", 
-        template="plotly_dark",
-        xaxis={'visible': False}, 
-        yaxis={'visible': False}
-    )
-
+def update_details(clickData, track_metric):
+    # Empty States
+    empty_track = go.Figure().update_layout(template='plotly_dark', xaxis={'visible': False}, yaxis={'visible': False}, title="Select a point")
+    empty_hist = go.Figure().update_layout(template='plotly_dark', xaxis={'visible': False}, yaxis={'visible': False}, title="No Data")
+    empty_table = html.P("No selection", style={'color': '#888'})
+    
     if not clickData:
-        return empty_fig
+        return empty_track, empty_hist, empty_table
 
     try:
-        # 1. Retrieve ID from graph click
-        selected_id = clickData['points'][0]['customdata']
-        lookup_key = str(selected_id)
+        sel_id = str(clickData['points'][0]['customdata'])
+        if sel_id not in tracks_dict:
+            empty_track.update_layout(title=f"ID {sel_id} missing")
+            return empty_track, empty_hist, html.P(f"ID {sel_id} not found")
 
-        # 2. Lookup in Dictionary
-        if lookup_key not in tracks_dict:
-            empty_fig.update_layout(title=f"Error: ID '{lookup_key}' not found in tracks.npz")
-            return empty_fig
-        
-        # 3. Plot Track
-        track_data = tracks_dict[lookup_key]
-        track_arr = np.array(track_data)
-        
-        # Check if track has data
-        if track_arr.size == 0:
-            empty_fig.update_layout(title=f"Track ID {lookup_key} is empty")
-            return empty_fig
+        # 1. Get Data
+        track_arr = np.array(tracks_dict[sel_id])
+        fit_entry = {}
+        if fitness_data and sel_id in fitness_data:
+            fit_entry = fitness_data[sel_id].item()
 
-        fig_track = px.line(
-            x=track_arr[:, 0], 
-            y=track_arr[:, 1], 
-            title=f"Track ID: {lookup_key}",
-            template="plotly_dark",
-            markers=False # False makes it cleaner, set True to see segments
-        )
-        
-        # Mark Start and End
-        fig_track.add_trace(go.Scatter(x=[track_arr[0,0]], y=[track_arr[0,1]], mode='markers', marker=dict(color='green', size=10), name='Start'))
-        fig_track.add_trace(go.Scatter(x=[track_arr[-1,0]], y=[track_arr[-1,1]], mode='markers', marker=dict(color='red', size=10), name='End'))
-        
-        # Ensure aspect ratio is correct (so round tracks look round)
-        fig_track.update_yaxes(scaleanchor="x", scaleratio=1)
-        
-        return fig_track
-        
+        trace_data = fit_entry.get(track_metric, []) if (track_metric and track_metric != "None") else []
+
+        # --- A. TRACK PLOT ---
+        track_fig = go.Figure()
+        if len(trace_data) > 0:
+            color_vals = interpolate_metrics_to_track(track_arr, trace_data)
+            if color_vals is not None:
+                track_fig.add_trace(go.Scatter(
+                    x=track_arr[:, 0], y=track_arr[:, 1], mode='markers+lines',
+                    line=dict(width=1, color='rgba(150,150,150,0.3)'),
+                    marker=dict(size=5, color=color_vals, colorscale='Turbo', showscale=True),
+                    name='Track'
+                ))
+            else:
+                 track_fig.add_trace(go.Scatter(x=track_arr[:,0], y=track_arr[:,1], mode='lines', line=dict(color='white')))
+        else:
+            track_fig.add_trace(go.Scatter(x=track_arr[:,0], y=track_arr[:,1], mode='lines', line=dict(color='white')))
+
+        track_fig.add_trace(go.Scatter(x=[track_arr[0,0]], y=[track_arr[0,1]], mode='markers', marker=dict(color='green', size=8), name='Start'))
+        track_fig.update_layout(title=f"Track {sel_id}", template="plotly_dark", yaxis=dict(scaleanchor="x", scaleratio=1), margin=dict(l=10, r=10, t=30, b=10))
+
+        # --- B. HISTOGRAM ---
+        hist_fig = go.Figure()
+        if len(trace_data) > 0:
+            raw_vals = np.array(trace_data)[:, 0]
+            hist_fig.add_trace(go.Histogram(x=raw_vals, marker_color='#636efa', opacity=0.75, nbinsx=30))
+            hist_fig.update_layout(title=f"Dist: {track_metric}", template="plotly_dark", margin=dict(l=30, r=10, t=30, b=30), bargap=0.1)
+        else:
+            hist_fig.update_layout(title="No trace data", template="plotly_dark", xaxis={'visible': False}, yaxis={'visible': False})
+
+        # --- C. SCALAR TABLE ---
+        table_rows = []
+        if fit_entry:
+            sorted_keys = sorted(fit_entry.keys())
+            for k in sorted_keys:
+                val = fit_entry[k]
+                
+                # Determine display value
+                display_val = ""
+                style = {'color': '#ddd'} # Default text color
+                
+                if isinstance(val, (int, float)):
+                    display_val = f"{val:.4f}"
+                    style['color'] = '#4fd6ff' # Light blue for numbers
+                elif isinstance(val, (list, np.ndarray)):
+                    display_val = f"Trace ({len(val)} points)"
+                    style['color'] = '#ffbf00' # Orange/Yellow for arrays
+                elif isinstance(val, dict):
+                    display_val = "Object {}"
+                    style['color'] = '#aaa'
+                else:
+                    display_val = str(val)
+
+                table_rows.append(html.Tr([
+                    html.Td(k, style={'padding': '2px 10px', 'fontWeight': 'bold', 'borderBottom': '1px solid #333'}),
+                    html.Td(display_val, style=dict(style, **{'padding': '2px 10px', 'textAlign': 'right', 'borderBottom': '1px solid #333'}))
+                ]))
+            
+            table_comp = html.Table(table_rows, style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'})
+        else:
+            table_comp = html.P("No fitness data found for this ID.")
+
+        return track_fig, hist_fig, table_comp
+
     except Exception as e:
-        print(f"Error in callback: {e}")
-        empty_fig.update_layout(title=f"Error displaying track")
-        return empty_fig
+        print(f"Callback Error: {e}")
+        return empty_track, empty_hist, html.P("Error processing data")
 
-# ==========================================
-# 7. RUN
-# ==========================================
 if __name__ == '__main__':
-    # Using specific port and turning off hot-reload can sometimes help with context issues
-    app.run(debug=True, port=8066, use_reloader=True)
+    app.run(debug=True, port=8066)
