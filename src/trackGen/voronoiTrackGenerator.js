@@ -1,14 +1,17 @@
 import Voronoi from '../lib/rhill-voronoi-core.js';
 import { NUMBER_OF_VORONOI_SITES } from "../utils/constants.js"
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
+import { createNoise2D } from 'simplex-noise';
+import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = []) {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], genType = 'perlin') {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
+    this.noise = createNoise2D(this.randomGen);
     this.voronoi = new Voronoi();
     this.trackSize = trackSize;
-    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints();
+    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints(genType);
     this.diagram = this.voronoi.compute(this.dataSet, this.bbox);
 
     this.patchPath = [];
@@ -17,11 +20,79 @@ export class VoronoiTrackGenerator {
     this.trackEdges = this.findTrackEdges();
   }
 
-  generatePoints() {
-    return Array.from({ length: NUMBER_OF_VORONOI_SITES }, () => ({
-      x: this.randomGen() * this.bbox.xr,
-      y: this.randomGen() * this.bbox.yb
-    }));
+  generatePoints(genType) {
+    switch (genType) {
+      case 'perlin':
+        return this.perlinPointGen();
+      case 'uniform':
+        return this.uniformPointGen();
+      default:
+        log.warn`Unknown genType "${genType}", defaulting to uniform point generation.`;
+        return this.uniformPointGen();
+    }
+  }
+
+  perlinPointGen() {
+    let points = [];
+
+    const NUM_OF_FEATURES = 2; // Lower = Larger, wider shapes
+    const densityBias = 0.3; // Adjusts overall density (0 to 1)
+    const densityPower = 2.0; // Adjusts how sharply density falls off (>= 1)
+    const occupiedGridScale = 0.25; // Adjusts how strictly we enforce grid occupancy (0 to 1)
+
+    const width = this.bbox.xr - this.bbox.xl;
+    const height = this.bbox.yb - this.bbox.yt;
+    let noiseScale = NUM_OF_FEATURES / Math.max(width, height);
+
+    const area = width * height;
+    const gridCellSize = Math.sqrt(area / NUMBER_OF_VORONOI_SITES) * occupiedGridScale;
+    const occupiedGrid = new Set();
+
+    let safetyCounter = 0; // To prevent infinite loops
+    const MAX_ATTEMPTS = 100000;
+    while (points.length < NUMBER_OF_VORONOI_SITES && safetyCounter < MAX_ATTEMPTS) {
+      safetyCounter++;
+      const x = this.randomGen() * this.bbox.xr;
+      const y = this.randomGen() * this.bbox.yb;
+
+      const col = Math.floor(x / gridCellSize);
+      const row = Math.floor(y / gridCellSize);
+      const key = `${col},${row}`;
+      if (occupiedGrid.has(key)) {
+        continue; // Skip if this grid cell is already occupied
+      }
+
+      let n = this.noise(x * noiseScale, y * noiseScale);
+      // remap to [0, 1]
+      n = (n + 1) / 2;
+
+      n = Math.pow(
+        Math.max(0, n - densityBias),
+        densityPower
+      );
+
+      if (this.randomGen() < n) {
+        points.push({ x, y });
+        occupiedGrid.add(key);
+      }
+    }
+
+    if (safetyCounter >= MAX_ATTEMPTS) {
+      throw new Error(`Failed to generate enough points after ${MAX_ATTEMPTS} attempts. Generated ${points.length} points.`);
+    }
+
+    return points;
+  }
+
+  uniformPointGen() {
+    let points = [];
+    for (let i = 0; i < NUMBER_OF_VORONOI_SITES; i++) {
+      points.push({
+        x: this.randomGen() * this.bbox.xr,
+        y: this.randomGen() * this.bbox.yb
+      });
+    }
+    return points;
   }
 
   sitesFromInput(points) {
@@ -221,5 +292,5 @@ class PathFinder {
 
     return null; // No path found
   }
-  
+
 }
