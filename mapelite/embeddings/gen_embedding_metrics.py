@@ -66,9 +66,7 @@ class MetricsTransformerVAE(nn.Module):
         return mu, log_var
 
     def reparameterize(self, mu, log_var):
-        std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
+        return mu
     
     def decode(self, z, seq_len, src_key_padding_mask=None):
         batch_size = z.shape[0]
@@ -270,9 +268,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Track Embeddings from VAE with Dimensionality Reduction")
     parser.add_argument("--data", type=str, default="datasets/dataset10k_metrics.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="models/model_metrics_VAE/model_metrics_VAE_latent32.pth", 
+    parser.add_argument("--model", type=str, default="models/model_metrics_VAE/model_metrics_VAE_latent16.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="track_embeddings_metrics.npz", 
+    parser.add_argument("--output", type=str, default="datasets/embeddings/track_embeddings_metrics_16_mu.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")

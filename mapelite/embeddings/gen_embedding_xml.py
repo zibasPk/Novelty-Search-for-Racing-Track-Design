@@ -242,10 +242,9 @@ def main():
                         help="Path to input .npz dataset")
     parser.add_argument("--model", type=str, default="models/model_metrics_VAE/model_xml_VAE_latent32.pth",
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="track_embeddings_32dim.npz",
+    parser.add_argument("--output", type=str, default="datasets/embeddings/track_embeddings_xml_32dim_mu.npz",
                         help="Path to save output .npz")
-    parser.add_argument("--batch_size", type=int, default=64,
-                        help="Inference batch size")
+    parser.add_argument("--batch_size", type=int, default=64, help="Inference batch size")
     parser.add_argument("--reduce_method", type=str, default='umap', choices=['umap', 'pca', 'tsne'],
                         help="Dimensionality reduction method (default: umap)")
     parser.add_argument("--target_dim", type=int, default=2,
