@@ -7,6 +7,8 @@ import numpy as np
 import os
 from pathlib import Path
 
+from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
@@ -19,7 +21,7 @@ DEFAULT_MAX_POINTS = 9000
 
 # Fixed ranges for consistent visualization
 TRACE_RANGES = {
-    "speed_trace": [0, 100],
+    "speed_trace": [0, 60],
     "steer_trace": [-1, 1],
     "accel_trace": [0, 1],
     "brake_trace": [0, 1]
@@ -51,7 +53,17 @@ if FITNESS_FILE.exists():
             print(f"Loaded fitness. Scalar metrics: {len(scalar_metrics)}")
     except Exception as e:
         print(f"Error loading fitness file: {e}")
+        
+        
+custom_burd = [
+    [0.0, 'rgb(33, 102, 172)'],   # Dark Blue (Min)
+    [0.4, 'rgb(103, 169, 207)'],  # Light Blue
+    [0.5, 'rgb(255, 255, 255)'],  # White (Center)
+    [0.6, 'rgb(239, 138, 98)'],   # Light Red
+    [1.0, 'rgb(178, 24, 43)']     # Dark Red (Max)
+]
 
+        
 def interpolate_metrics_to_track(track_xy, trace_data):
     if not trace_data or len(trace_data) < 2: return None
     deltas = np.diff(track_xy, axis=0)
@@ -72,19 +84,51 @@ def load_dataset(filename):
     data = np.load(filepath)
     return data["embeddings"], data["ids"]
 
-def prepare_dataframe(latents, raw_ids, max_points, selected_metric):
+def prepare_dataframe(latents, raw_ids, max_points, selected_metric, use_robust=True):
+    # 1. Create Basic DataFrame
     df = pd.DataFrame(latents, columns=['Latent_X', 'Latent_Y'])
     df['ID'] = [str(x) for x in raw_ids]
+    
+    # 2. Extract Raw Metric Values
     if selected_metric and fitness_data and selected_metric != "None":
         values = []
         for uid in df['ID']:
             if uid in fitness_data:
-                values.append(fitness_data[uid].item().get(selected_metric, np.nan))
+                # fetch the value safely
+                val = fitness_data[uid].item().get(selected_metric, np.nan)
+                values.append(val)
             else:
                 values.append(np.nan)
+        
+        # Store the REAL values for the Tooltip
         df[selected_metric] = values
+        
+        # 3. Create a SCALED column for the Color Map
+        if use_robust:
+            # Drop NaNs for the scaler training, then fill back or handle NaNs
+            # Simple approach: Fill NaNs with median for scaling or ignore
+            valid_mask = ~np.isnan(values)
+            if np.sum(valid_mask) > 0:
+                scaler = RobustScaler()
+                # scaler = StandardScaler()  # Alternative: StandardScaler for Z-score normalization
+                # Reshape needed for sklearn (n_samples, n_features)
+                raw_np = np.array(values)[valid_mask].reshape(-1, 1)
+                scaled_np = scaler.fit_transform(raw_np)
+                
+                # Initialize scaled column with NaNs
+                df[f"{selected_metric}_scaled"] = np.nan
+                # Fill in the valid scaled values
+                df.loc[valid_mask, f"{selected_metric}_scaled"] = scaled_np.flatten()
+            else:
+                df[f"{selected_metric}_scaled"] = df[selected_metric]
+        else:
+            # If not robust, just copy the data
+            df[f"{selected_metric}_scaled"] = df[selected_metric]
+
+    # 4. Downsampling (Optimization)
     if max_points and len(df) > max_points:
         df = df.sample(n=max_points, random_state=42)
+        
     return df
 
 # ==========================================
@@ -162,16 +206,35 @@ def update_latent(dataset, max_samples, search_id, color_col):
     latents, raw_ids = load_dataset(dataset)
     if latents is None: return go.Figure()
 
-    df = prepare_dataframe(latents, raw_ids, max_samples, color_col)
+    # Pass use_robust=True to generate the extra column
+    df = prepare_dataframe(latents, raw_ids, max_samples, color_col, use_robust=True)
+    
     highlight_id = str(search_id).strip() if search_id else None
     title = f"Latent Space: {dataset}"
 
     if color_col and color_col != "None" and color_col in df.columns:
+        # DETERMINE WHICH COLUMN TO USE FOR COLOR
+        color_source = f"{color_col}_scaled"
+        
         fig = px.scatter(
-            df, x='Latent_X', y='Latent_Y', hover_name='ID',
-            color=color_col, color_continuous_scale='Turbo',
-            template='plotly_dark', title=title
+            df, 
+            x='Latent_X', 
+            y='Latent_Y', 
+            
+            # Use the Scaled column for the heatmap colors
+            color=color_source, 
+            
+            # Use the Original column for the tooltip text
+            hover_data=['ID', color_col],
+            
+            color_continuous_scale='RdBu',
+            template='plotly_dark', 
+            title=title
         )
+        
+        # Clean up the Color Bar Label (remove "_scaled")
+        fig.update_layout(coloraxis_colorbar=dict(title=color_col))
+        
         fig.update_traces(marker=dict(size=5, opacity=0.8))
     else:
         fig = px.scatter(df, x='Latent_X', y='Latent_Y', hover_name='ID', template='plotly_dark', title=title)
@@ -222,7 +285,7 @@ def update_details(clickData, track_metric):
                     x=track_arr[:, 0], y=track_arr[:, 1], mode='markers+lines',
                     line=dict(width=1, color='rgba(150,150,150,0.3)'),
                     marker=dict(
-                        size=5, color=color_vals, colorscale='Turbo', 
+                        size=5, color=color_vals, colorscale=custom_burd,
                         showscale=True, cmin=m_range[0], cmax=m_range[1]
                     ),
                     name='Track'
