@@ -6,7 +6,7 @@ import os
 from utils import torcsLogPath, dynamicsLogColumns
 
 
-DEFAULT_LAP = 2
+DEFAULT_EMBED_LAP = 2
 
 __author__ = "Milo Brontesi"
 
@@ -27,7 +27,7 @@ def generate(trackName):
                 continue
             lap = int(row[cols.lap.value])
 
-            if lap != DEFAULT_LAP:
+            if lap != DEFAULT_EMBED_LAP:
                 continue
             idx = segCounter
             speed = float(row[cols.speed.value])

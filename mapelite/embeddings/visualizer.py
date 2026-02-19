@@ -39,22 +39,61 @@ else:
     tracks_dict = {}
     print(f"ERROR: {TRACKS_FILE} not found.")
 
-fitness_data = None
+fitness_data = None  # lazy-loaded npz (low memory)
+entropy_cache = {}   # small cache: id -> {entropy_key: float} (4 floats per entry)
 scalar_metrics = []
 trace_metrics = ["speed_trace", "accel_trace", "steer_trace", "brake_trace"]
+
+ENTROPY_BINS = 30
+TRACE_TO_ENTROPY = {
+    "speed_trace": "speed_entropy_new",
+    "accel_trace": "accel_entropy_new",
+    "steer_trace": "steer_entropy_new",
+    "brake_trace": "brake_entropy_new",
+}
+
+def compute_entropy_from_trace(trace_data, bins=ENTROPY_BINS):
+    """Compute Shannon entropy from a trace (list of [value, distance] pairs)."""
+    if not trace_data or len(trace_data) < 10:
+        return 0.0
+    values = np.array(trace_data)[:, 0]
+    values = values[np.isfinite(values)]
+    if len(values) < 10:
+        return 0.0
+    hist, _ = np.histogram(values, bins=bins, density=False)
+    probabilities = hist / np.sum(hist) if np.sum(hist) > 0 else hist
+    probabilities = probabilities[probabilities > 0]
+    return -np.sum(probabilities * np.log2(probabilities))
+
+def get_fitness_entry(uid):
+    """Get fitness entry for a given ID, merging lazy npz data with cached entropy."""
+    if not fitness_data or uid not in fitness_data:
+        return entropy_cache.get(uid, {})
+    entry = fitness_data[uid].item()
+    extra = entropy_cache.get(uid)
+    if extra:
+        entry.update(extra)
+    return entry
 
 if FITNESS_FILE.exists():
     try:
         fitness_data = np.load(FITNESS_FILE, allow_pickle=True)
+        # Pre-compute entropy from traces (only store 4 floats per entry)
+        for fid in fitness_data.files:
+            raw_entry = fitness_data[fid].item()
+            ent = {}
+            for trace_key, entropy_key in TRACE_TO_ENTROPY.items():
+                trace = raw_entry.get(trace_key, [])
+                ent[entropy_key] = compute_entropy_from_trace(trace)
+            entropy_cache[fid] = ent
+        # Build scalar_metrics list including the new entropy keys
         if len(fitness_data.files) > 0:
-            first_id = fitness_data.files[0]
-            first_entry = fitness_data[first_id].item()
+            first_entry = get_fitness_entry(fitness_data.files[0])
             scalar_metrics = sorted([k for k, v in first_entry.items() if isinstance(v, (int, float))])
-            print(f"Loaded fitness. Scalar metrics: {len(scalar_metrics)}")
+        print(f"Loaded fitness with recalculated entropy. Scalar metrics: {len(scalar_metrics)}")
     except Exception as e:
         print(f"Error loading fitness file: {e}")
-        
-        
+
 custom_burd = [
     [0.0, 'rgb(33, 102, 172)'],   # Dark Blue (Min)
     [0.4, 'rgb(103, 169, 207)'],  # Light Blue
@@ -63,16 +102,33 @@ custom_burd = [
     [1.0, 'rgb(178, 24, 43)']     # Dark Red (Max)
 ]
 
-        
 def interpolate_metrics_to_track(track_xy, trace_data):
-    if not trace_data or len(trace_data) < 2: return None
+    """
+    Maps telemetry data (trace_data) onto the fixed track geometry (track_xy).
+    Returns NaNs for track segments that were not reached.
+    """
+    if not trace_data or len(trace_data) < 2: 
+        return None
+    
+    # 1. Calculate cumulative distance of the geometric track
     deltas = np.diff(track_xy, axis=0)
     seg_lengths = np.sqrt((deltas ** 2).sum(axis=1))
     track_dist = np.insert(np.cumsum(seg_lengths), 0, 0)
+    
+    # 2. Extract telemetry
     trace_arr = np.array(trace_data)
     t_values = trace_arr[:, 0]
     t_dists = trace_arr[:, 1]
-    return np.interp(track_dist, t_dists, t_values)
+    
+    # 3. SORT telemetry by distance (Crucial for np.interp)
+    sort_idx = np.argsort(t_dists)
+    t_dists = t_dists[sort_idx]
+    t_values = t_values[sort_idx]
+
+    # 4. Interpolate
+    # left=np.nan, right=np.nan ensures we don't color the track 
+    # beyond where the car actually drove.
+    return np.interp(track_dist, t_dists, t_values, left=np.nan, right=np.nan)
 
 def get_available_datasets():
     if not DATASETS_FOLDER.exists(): return []
@@ -91,14 +147,17 @@ def prepare_dataframe(latents, raw_ids, max_points, selected_metric, use_robust=
     
     # 2. Extract Raw Metric Values
     if selected_metric and fitness_data and selected_metric != "None":
+        is_cached = selected_metric in TRACE_TO_ENTROPY.values()
         values = []
         for uid in df['ID']:
-            if uid in fitness_data:
-                # fetch the value safely
+            # Fast path: entropy metrics are fully in entropy_cache, skip npz
+            if is_cached:
+                val = entropy_cache.get(uid, {}).get(selected_metric, np.nan)
+            elif uid in fitness_data:
                 val = fitness_data[uid].item().get(selected_metric, np.nan)
-                values.append(val)
             else:
-                values.append(np.nan)
+                val = np.nan
+            values.append(val)
         
         # Store the REAL values for the Tooltip
         df[selected_metric] = values
@@ -212,41 +271,44 @@ def update_latent(dataset, max_samples, search_id, color_col):
     highlight_id = str(search_id).strip() if search_id else None
     title = f"Latent Space: {dataset}"
 
+    # --- 1. BUILD MAIN SCATTER PLOT ---
     if color_col and color_col != "None" and color_col in df.columns:
-        # DETERMINE WHICH COLUMN TO USE FOR COLOR
         color_source = f"{color_col}_scaled"
-        
         fig = px.scatter(
             df, 
             x='Latent_X', 
             y='Latent_Y', 
-            
-            # Use the Scaled column for the heatmap colors
             color=color_source, 
-            
-            # Use the Original column for the tooltip text
             hover_data=['ID', color_col],
-            
             color_continuous_scale='RdBu',
             template='plotly_dark', 
             title=title
         )
-        
-        # Clean up the Color Bar Label (remove "_scaled")
         fig.update_layout(coloraxis_colorbar=dict(title=color_col))
-        
         fig.update_traces(marker=dict(size=5, opacity=0.8))
     else:
         fig = px.scatter(df, x='Latent_X', y='Latent_Y', hover_name='ID', template='plotly_dark', title=title)
         fig.update_traces(marker=dict(color='steelblue', size=6))
 
+    # This ensures the blue dots still work when clicked
+    fig.update_traces(customdata=df['ID'])
+
+    # --- 2. ADD HIGHLIGHT TRACE ---
     if highlight_id and highlight_id in df['ID'].values:
         target = df[df['ID'] == highlight_id]
-        fig.add_trace(go.Scatter(x=target['Latent_X'], y=target['Latent_Y'], mode='markers',
-            marker=dict(size=12, color='red', line=dict(color='white', width=2)), name='Selected'))
+    
+        fig.add_trace(go.Scatter(
+            x=target['Latent_X'], 
+            y=target['Latent_Y'], 
+            mode='markers',
+            marker=dict(size=12, color='red', line=dict(color='white', width=2)), 
+            name='Selected',
+            # ONLY pass the ID of the target, not the whole dataframe
+            customdata=target['ID'] 
+        ))
 
     fig.update_layout(margin=dict(l=10, r=10, t=40, b=10))
-    fig.update_traces(customdata=df['ID'])
+
     return fig
 
 @app.callback(
@@ -257,6 +319,7 @@ def update_latent(dataset, max_samples, search_id, color_col):
      Input('track-metric-dropdown', 'value')]
 )
 def update_details(clickData, track_metric):
+    # Default/Empty States
     empty_track = go.Figure().update_layout(template='plotly_dark', xaxis={'visible': False}, yaxis={'visible': False}, title="Select a point")
     empty_hist = go.Figure().update_layout(template='plotly_dark', xaxis={'visible': False}, yaxis={'visible': False}, title="No Data")
     empty_table = html.P("No selection", style={'color': '#888'})
@@ -270,53 +333,94 @@ def update_details(clickData, track_metric):
             return empty_track, empty_hist, html.P(f"ID {sel_id} not found")
 
         track_arr = np.array(tracks_dict[sel_id])
-        fit_entry = fitness_data[sel_id].item() if (fitness_data and sel_id in fitness_data) else {}
+        fit_entry = get_fitness_entry(sel_id)
+        
+        # Get trace data if metric is selected
         trace_data = fit_entry.get(track_metric, []) if (track_metric and track_metric != "None") else []
         
-        # Determine fixed range for the selected metric
+        # Get fixed range for consistent coloring
         m_range = TRACE_RANGES.get(track_metric, [None, None])
 
         # --- A. TRACK PLOT ---
         track_fig = go.Figure()
+
+        # LAYER 1: The "Ghost" Track (Full Geometry)
+        # This shows the full shape in dark grey so we have context
+        track_fig.add_trace(go.Scattergl(
+            x=track_arr[:, 0], y=track_arr[:, 1], 
+            mode='lines',
+            line=dict(width=1, color='#444'), # Dark grey
+            hoverinfo='skip',
+            name='Track Geometry'
+        ))
+
+        # LAYER 2: The Data Overlay
         if len(trace_data) > 0:
             color_vals = interpolate_metrics_to_track(track_arr, trace_data)
+            
             if color_vals is not None:
-                track_fig.add_trace(go.Scatter(
-                    x=track_arr[:, 0], y=track_arr[:, 1], mode='markers+lines',
-                    line=dict(width=1, color='rgba(150,150,150,0.3)'),
+                track_fig.add_trace(go.Scattergl(
+                    x=track_arr[:, 0], y=track_arr[:, 1], 
+                    mode='markers+lines', # Markers needed for gradient, Lines for continuity
+                    line=dict(width=1, color='rgba(255,255,255,0.1)'), # Faint line to help visuals
                     marker=dict(
-                        size=5, color=color_vals, colorscale=custom_burd,
-                        showscale=True, cmin=m_range[0], cmax=m_range[1]
+                        size=4, 
+                        color=color_vals, 
+                        colorscale=custom_burd,
+                        showscale=True, 
+                        cmin=m_range[0], 
+                        cmax=m_range[1],
+                        colorbar=dict(title=track_metric, thickness=10)
                     ),
-                    name='Track'
+                    connectgaps=False, # <--- IMPORTANT: Don't draw lines across crashed sections
+                    name='Telemetry'
                 ))
-            else:
-                 track_fig.add_trace(go.Scatter(x=track_arr[:,0], y=track_arr[:,1], mode='lines', line=dict(color='white')))
-        else:
-            track_fig.add_trace(go.Scatter(x=track_arr[:,0], y=track_arr[:,1], mode='lines', line=dict(color='white')))
+        
+        # Start Point Indicator
+        track_fig.add_trace(go.Scattergl(
+            x=[track_arr[0,0]], y=[track_arr[0,1]], 
+            mode='markers', marker=dict(color='green', size=8), 
+            name='Start'
+        ))
 
-        track_fig.add_trace(go.Scatter(x=[track_arr[0,0]], y=[track_arr[0,1]], mode='markers', marker=dict(color='green', size=8), name='Start'))
-        track_fig.update_layout(title=f"Track {sel_id}", template="plotly_dark", yaxis=dict(scaleanchor="x", scaleratio=1), margin=dict(l=10, r=10, t=30, b=10))
+        track_fig.update_layout(
+            title=f"Track {sel_id}", 
+            template="plotly_dark", 
+            yaxis=dict(scaleanchor="x", scaleratio=1), 
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(x=0, y=1)
+        )
 
         # --- B. HISTOGRAM ---
         hist_fig = go.Figure()
         if len(trace_data) > 0:
             raw_vals = np.array(trace_data)[:, 0]
-            # Set fixed bins based on range to prevent flickering bar widths
+            
+            # Smart Binning
             bins_config = None
-            if m_range[0] is not None:
+            if m_range[0] is not None and m_range[1] is not None:
+                # Create ~40 bins across the valid range
                 bins_config = dict(start=m_range[0], end=m_range[1], size=(m_range[1]-m_range[0])/40)
 
-            hist_fig.add_trace(go.Histogram(x=raw_vals, marker_color='#636efa', opacity=0.75, xbins=bins_config))
+            hist_fig.add_trace(go.Histogram(
+                x=raw_vals, 
+                marker_color='#636efa', 
+                opacity=0.75, 
+                xbins=bins_config
+            ))
+            
             hist_fig.update_layout(
-                title=f"Dist: {track_metric}", template="plotly_dark", 
-                margin=dict(l=30, r=10, t=30, b=30), bargap=0.1,
-                xaxis=dict(range=m_range) # Fixed X-Axis Scale
+                title=f"Dist: {track_metric}", 
+                template="plotly_dark", 
+                margin=dict(l=30, r=10, t=30, b=30), 
+                bargap=0.1,
+                xaxis=dict(range=m_range, title=track_metric)
             )
         else:
             hist_fig.update_layout(title="No trace data", template="plotly_dark", xaxis={'visible': False}, yaxis={'visible': False})
 
         # --- C. SCALAR TABLE ---
+        # (This part remains unchanged)
         table_rows = []
         if fit_entry:
             for k in sorted(fit_entry.keys()):
@@ -329,13 +433,13 @@ def update_details(clickData, track_metric):
                 ]))
             table_comp = html.Table(table_rows, style={'width': '100%', 'borderCollapse': 'collapse', 'fontFamily': 'monospace'})
         else:
-            table_comp = html.P("No fitness data found for this ID.")
+            table_comp = html.P("No fitness data found.")
 
         return track_fig, hist_fig, table_comp
 
     except Exception as e:
         print(f"Callback Error: {e}")
-        return empty_track, empty_hist, html.P("Error processing data")
+        return empty_track, empty_hist, html.P(f"Error: {str(e)}")
 
 if __name__ == '__main__':
     app.run(debug=True, port=8066)
