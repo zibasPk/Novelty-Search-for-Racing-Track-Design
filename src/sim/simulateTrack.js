@@ -75,7 +75,6 @@ export async function simulate(
     // Move track XML to Docker container and generate track files
     log.debug(`Generating and moving track files to Docker container for ${seed}`);
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
-    log.debug(trackGenOutput);
 
     const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e `;
     const simulationOutput = await Promise.race([

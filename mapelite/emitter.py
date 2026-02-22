@@ -6,7 +6,7 @@ import random
 
 from ribs.emitters import EmitterBase
 
-from config import BASE_URL, BATCH_SIZE, INIT_POPULATION, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE
+from config import BASE_URL, BATCH_SIZE, INIT_POPULATION, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE
 import utils
 
 class CustomEmitter(EmitterBase):
@@ -33,7 +33,7 @@ class CustomEmitter(EmitterBase):
             
             # Here we fill up one dask batch_size if it's <= INIT_POPULATION
             for _ in range(self.batch_size):
-                sol = utils.generate_solution(self.iteration - 1)
+                sol = self.generate_solution(self.iteration - 1)
                 arr = utils.solution_to_array(sol)
                 if arr is not None:
                     out.append(arr)
@@ -48,7 +48,26 @@ class CustomEmitter(EmitterBase):
             else:
                 # Crossover (returns BATCH_SIZE solutions, created from BATCH_SIZE // 2 pairs)
                 return self.crossover_solutions()
-
+    
+    def generate_solution(self, iteration):
+        """Generates a new track solution by calling the external API."""
+        # print(f"Generating solution for iteration {iteration}") # Mute: too chatty
+        try:
+            response = requests.post(
+                f"{BASE_URL}/generate",
+                json={
+                    "id": iteration + random.random(),
+                    "mode": GENERATION_MODE,
+                    "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1])
+                },
+                timeout=60
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            print(f"Error generating solution for iteration {iteration}: {e}")
+            return None 
+    
     def mutate_solutions(self):
         """Mutates existing elite solutions via the external API."""
         print(f"Mutating solutions for iteration {self.iteration}")

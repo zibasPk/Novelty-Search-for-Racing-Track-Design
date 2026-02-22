@@ -66,7 +66,9 @@ class MetricsTransformerVAE(nn.Module):
         return mu, log_var
 
     def reparameterize(self, mu, log_var):
-        return mu
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)
+        return mu + eps * std
     
     def decode(self, z, seq_len, src_key_padding_mask=None):
         batch_size = z.shape[0]

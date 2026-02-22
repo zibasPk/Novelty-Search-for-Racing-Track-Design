@@ -7,8 +7,7 @@ import joblib
 import os
 
 from config import (
-    BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM,
-    TRACK_SIZE_RANGE, INVALID_SCORE, CHECKPOINT_DIR
+    BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE
 )
 
 # --- Embedding Model Loading ---
@@ -24,49 +23,7 @@ except FileNotFoundError:
             return np.zeros((data.shape[0], 2))
     EMBEDDING_MODEL = PlaceholderUMAP()
 
-
-# --- Global Stats for Normalization ---
-_STATS = {
-    'len_min': np.inf, 'len_max': -np.inf,
-    'ov_min': np.inf, 'ov_max': -np.inf,
-    'dx_min': np.inf, 'dx_max': -np.inf,
-    'bend_min': np.inf, 'bend_max': -np.inf,
-}
-
-def _upd(k, v):
-    """Update min/max for a given statistic key."""
-    lo, hi = f'{k}_min', f'{k}_max'
-    if v < _STATS[lo]: _STATS[lo] = v
-    if v > _STATS[hi]: _STATS[hi] = v
-
-def _norm(k, v, eps=1e-6):
-    """Normalize a value based on the current global min/max stats."""
-    lo, hi = _STATS[f'{k}_min'], _STATS[f'{k}_max']
-    range_val = hi - lo
-    if range_val == 0.0:
-        return 0.0 # Avoid division by zero if all values are the same
-    return (v - lo) / (range_val + eps)
-
 # --- Core Utility Functions ---
-
-def generate_solution(iteration):
-    """Generates a new track solution by calling the external API."""
-    # print(f"Generating solution for iteration {iteration}") # Mute: too chatty
-    try:
-        response = requests.post(
-            f"{BASE_URL}/generate",
-            json={
-                "id": iteration + random.random(),
-                "mode": GENERATION_MODE,
-                "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1])
-            },
-            timeout=60
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as e:
-        print(f"Error generating solution for iteration {iteration}: {e}")
-        return None
 
 def solution_to_array(sol):
     """Converts a JSON solution dictionary into the flat NumPy array format required by MAP-Elites."""
@@ -139,65 +96,6 @@ def pca_align(points):
         
     return aligned
 
-def descriptor_from_track(sol):
-    """Converts the track's spline vector into the 2D behavioral descriptor using UMAP."""
-    # The 'splineVector' is assumed to be part of the evaluation JSON response
-    pts = np.array([[p["x"], p["y"]] for p in sol.get("splineVector", [])], dtype=float)
-    
-    # Align the spline to account for rotation/translation invariance
-    aligned = pca_align(pts)
-    
-    # Flatten the aligned points to create the feature vector
-    flat = aligned.ravel()
-    
-    # Transform the feature vector using the pre-trained UMAP model
-    # Note: flat[None, :] ensures the input has the correct shape (1, N)
-    return EMBEDDING_MODEL.transform(flat[None, :])[0]
-
-def fitness_formula(fit):
-    """Calculates the scalar fitness score based on evaluation metrics."""
-    length = max(fit.get('length', 0.0), 1e-3)
-    bend_len = fit.get('right_len', 0.0) + fit.get('left_len', 0.0)
-    overtakes = fit.get('total_overtakes', 0.0)
-    dx = abs(fit.get('deltaX', 0.0)) or 1e-3
-
-    bend_ratio = bend_len / length
-
-    # Update global statistics for normalization
-    for k, v in (('len', length), ('ov', overtakes), ('dx', dx),
-                 ('bend', bend_ratio)):
-        _upd(k, v)
-
-    # Calculate normalized score
-    score = overtakes
-    return float(score)
-
-def evaluate_solution(sol):
-    """Submits a solution to the external API for evaluation and computes descriptor/fitness."""
-    sol_id = sol.get("id", 0)
-    ok = True
-    msg = ""
-    desc = np.zeros((2,))  # Default descriptor
-    fit_score = INVALID_SCORE
-
-    try:
-        # 1. Send solution for evaluation
-        r = requests.post(f"{BASE_URL}/evaluate", json=sol, timeout=60)
-        r.raise_for_status()
-        r_json = r.json()
-        
-        # 2. Extract raw fitness metrics and compute descriptor
-        fit = r_json.get("fitness", {})
-        desc = descriptor_from_track(r_json)  
-        
-        # 3. Compute final fitness score (will update global _STATS here)
-        fit_score = fitness_formula(fit)
-        
-    except Exception as e:
-        ok = False
-        msg = str(e)
-        
-    return sol_id, ok, msg, fit_score, desc
 
 
 def get_initial_archive_ranges(umap_model = EMBEDDING_MODEL, padding=0.1, default_bounds=(-1, 1)):

@@ -10,6 +10,7 @@ GENERATION_MODE = 'voronoi'  # 'convexHull' or 'voronoi'
 POINTS_COUNT = 100
 MAX_SELECTED_CELLS = 10  # relevant only for voronoi
 # Calculated Dimension: POINTS_COUNT * 2 (x/y) + MAX_SELECTED_CELLS * 2 (x/y) + 1 (ID)
+# All cells coordinates + selected cell coordinates + solution ID
 SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 
 TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
 

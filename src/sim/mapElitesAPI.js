@@ -110,12 +110,12 @@ app.post('/evaluate', async (req, res) => {
     });
     let resultsToPrint = simulationResult.fitness;
     if (resultsToPrint.embedding_data) {
-      resultsToPrint.embedding_data = simulationResult.fitness.embedding_data.length; 
+      resultsToPrint.embedding_data = simulationResult.fitness.embedding_data.length;
     }
     log.info('Returning fitness from /evaluate: ',
       JSON.stringify(resultsToPrint));
   } catch (error) {
-    log.error(`/evaluate for ${req.body.id}:`, error);
+    log.error(`/evaluate for ${req.body.id}:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
