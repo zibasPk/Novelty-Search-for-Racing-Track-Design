@@ -4,6 +4,7 @@ import { generateTrack } from '../trackGen/trackGenerator.js';
 import { TorcsXMLGenerator } from '../trackGen/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
+import { hasSelfIntersection } from '../utils/utils.js';
 import os from 'os';
 import {
   BBOX,
@@ -57,6 +58,10 @@ export async function simulate(
     mode, BBOX, seed, trackSize,
     saveJson, dataSet, selected
   );
+  // check if a track has a self-intersection, if so throw an error
+  if (hasSelfIntersection(trackResults.track)) {
+    throw new Error(`Track with seed ${seed} has self-intersection.`);
+  }
 
   // translate to XML for TORCS
   const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
@@ -68,6 +73,7 @@ export async function simulate(
 
   let containerId;
   let timeoutId;
+
   try {
     log.debug(`Starting Docker container for simulation ${seed}`);
     containerId = await startDockerContainer(seed);

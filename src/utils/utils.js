@@ -1,8 +1,6 @@
+
 import { BBOX } from "./constants.js";
-
-
-
-
+import log from "loglevel";
 
 /**
  * Find the segment with the minimum curvature in the track.
@@ -304,6 +302,91 @@ export function calculateCurveInitialHeading(p1, p2, radius, direction) {
 export function normalizeVector(vector) {
   const length = Math.hypot(vector.x, vector.y);
   return { x: vector.x / length, y: vector.y / length };
+}
+
+/**
+ * Check whether two line segments (p1→p2) and (p3→p4) intersect.
+ * Uses the standard cross-product orientation test.
+ * Returns true if segments properly cross each other (not just touch at endpoints).
+ */
+function segmentsIntersect(p1, p2, p3, p4) {
+  const cross = (o, a, b) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+  const d1 = cross(p3, p4, p1);
+  const d2 = cross(p3, p4, p2);
+  const d3 = cross(p1, p2, p3);
+  const d4 = cross(p1, p2, p4);
+
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+
+  // Collinear / on-segment cases (touch)
+  const onSegment = (p, q, r) =>
+    Math.min(p.x, r.x) <= q.x && q.x <= Math.max(p.x, r.x) &&
+    Math.min(p.y, r.y) <= q.y && q.y <= Math.max(p.y, r.y);
+
+  if (d1 === 0 && onSegment(p3, p1, p4)) return true;
+  if (d2 === 0 && onSegment(p3, p2, p4)) return true;
+  if (d3 === 0 && onSegment(p1, p3, p2)) return true;
+  if (d4 === 0 && onSegment(p1, p4, p2)) return true;
+
+  return false;
+}
+
+/**
+/**
+ * Check if a closed track (array of {x, y} points) has a self-intersection.
+ * Compares every pair of non-adjacent segments. Adjacent segments naturally
+ * share an endpoint and are skipped. For the closing segment (last→first),
+ * adjacency with the first and last segment is also handled.
+ *
+ * If the last point is (nearly) identical to the first point the track is
+ * already closed — the duplicate tail is stripped so that the implicit
+ * closing segment does not create a degenerate zero-length edge that would
+ * overlap with its neighbours and trigger false positives.
+ *
+ * @param {Array<{x: number, y: number}>} track
+ * @param {number} [epsilon=1e-9] tolerance for duplicate first/last point
+ * @returns {boolean} true if any two non-adjacent segments cross
+ */
+export function hasSelfIntersection(track, epsilon = 1e-9) {
+  if (!track || track.length < 4) return false;
+
+  // Strip duplicate closing point(s) so the implicit wrap-around segment
+  // (last → first) is never degenerate / overlapping.
+  let pts = track;
+  while (
+    pts.length > 3 &&
+    Math.abs(pts[pts.length - 1].x - pts[0].x) < epsilon &&
+    Math.abs(pts[pts.length - 1].y - pts[0].y) < epsilon
+  ) {
+    pts = pts.slice(0, -1);
+  }
+
+  const n = pts.length;
+
+  for (let i = 0; i < n; i++) {
+    const a1 = pts[i];
+    const a2 = pts[(i + 1) % n];
+
+    // Start j at i + 2 so we skip the immediately adjacent segment
+    for (let j = i + 2; j < n; j++) {
+      // Skip the pair where the closing segment wraps around to segment 0
+      if (i === 0 && j === n - 1) continue;
+
+      const b1 = pts[j];
+      const b2 = pts[(j + 1) % n];
+
+      if (segmentsIntersect(a1, a2, b1, b2)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 export function resamplePoints(points) {
