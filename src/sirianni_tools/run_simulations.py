@@ -204,7 +204,7 @@ def print_final_results(final_result):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-r", "--num_laps", type=int, default=0,
-                        help="number of laps to simulate (default 0 means no race).")
+                        help="number of laps to simulate. Overriten by --target-duration if specified.")
     parser.add_argument("--track-export", action="store_true",
                         help="run single-lap track export (with trackexporter bot).")
     parser.add_argument("--json", action="store_true",
@@ -213,10 +213,10 @@ def main():
     parser.add_argument("--repetitions", type=int, default=1,
                         help="Number of times to run the race+analysis (default=1).")
     parser.add_argument("-d","--target-duration", type=int, 
-                        help="Target simulation duration in seconds.")
-    parser.add_argument("--change-order", type=bool, default=True,
-                        help="change the order of bots for each iteration (default=True).")
-    parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data, when enabled, the script will only run the embedding simulation and analysis..")
+                        help="Target simulation duration in seconds used to calculate the number of laps. Overrides --num-laps.")
+    parser.add_argument("--dont-change-order", action="store_true",
+                        help="change the order of bots for each iteration.")
+    parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data. This will run a separate simulation to get the embedding data, which will be included in the final JSON output.")
     args = parser.parse_args()
 
     # The usual torcs raceman directory from utils:
@@ -249,8 +249,7 @@ def main():
             print(f"Number of laps to simulate was calculated: {args.num_laps}")
         
         if args.track_embedding:
-            print_final_results(parsed)
-            return  
+            embedding_data = parsed.get("embedding_data", None) 
             
                      
     # 2) run multiple races and accumulate the results
@@ -259,7 +258,7 @@ def main():
         print(f"\n=== Simulation iteration {i+1}/{args.repetitions} ===")
         try:
             clear_logs() 
-            run_race_simulation(folder_name, args.num_laps, i, args.change_order)
+            run_race_simulation(folder_name, args.num_laps, i, change_order=not args.dont_change_order)
         except subprocess.CalledProcessError as e:
             print(f"Error running race simulation: {e}")
             sys.exit(1)
@@ -284,6 +283,8 @@ def main():
     if aggregated_results:
         avg_res = average_metrics(aggregated_results)
         final_result = avg_res
+        if args.track_embedding:
+            final_result["embedding_data"] = embedding_data
         print_final_results(final_result) 
     else:
         print("Warning: No valid analysis results to average.")
