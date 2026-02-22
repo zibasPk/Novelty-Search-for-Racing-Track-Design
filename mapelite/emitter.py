@@ -6,7 +6,7 @@ import random
 
 from ribs.emitters import EmitterBase
 
-from config import BASE_URL, BATCH_SIZE, INIT_POPULATION, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE
+from config import BASE_URL, BATCH_SIZE, RANDOM_POPULATION_ITERS, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE
 import utils
 
 class CustomEmitter(EmitterBase):
@@ -24,7 +24,7 @@ class CustomEmitter(EmitterBase):
         self.iteration += 1
         print(f"Emitter.ask() called for iteration {self.iteration}")
         
-        if self.iteration <= INIT_POPULATION:
+        if self.iteration <= RANDOM_POPULATION_ITERS:
             # Initial random generation
             out = []
             # Note: We generate one at a time and append until batch_size is met
@@ -33,7 +33,7 @@ class CustomEmitter(EmitterBase):
             
             # Here we fill up one dask batch_size if it's <= INIT_POPULATION
             for _ in range(self.batch_size):
-                sol = self.generate_solution(self.iteration - 1)
+                sol = self.generate_solution()
                 arr = utils.solution_to_array(sol)
                 if arr is not None:
                     out.append(arr)
@@ -49,14 +49,14 @@ class CustomEmitter(EmitterBase):
                 # Crossover (returns BATCH_SIZE solutions, created from BATCH_SIZE // 2 pairs)
                 return self.crossover_solutions()
     
-    def generate_solution(self, iteration):
+    def generate_solution(self):
         """Generates a new track solution by calling the external API."""
         # print(f"Generating solution for iteration {iteration}") # Mute: too chatty
         try:
             response = requests.post(
                 f"{BASE_URL}/generate",
                 json={
-                    "id": iteration + random.random(),
+                    "id": self.iteration - 1 + random.random(),
                     "mode": GENERATION_MODE,
                     "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1])
                 },
@@ -65,7 +65,7 @@ class CustomEmitter(EmitterBase):
             response.raise_for_status()
             return response.json()
         except requests.RequestException as e:
-            print(f"Error generating solution for iteration {iteration}: {e}")
+            print(f"Error generating solution for iteration {self.iteration}: {e}")
             return None 
     
     def mutate_solutions(self):
@@ -95,7 +95,7 @@ class CustomEmitter(EmitterBase):
                 
                 # Assign a unique, iteration-based ID for tracking
                 frac = utils.get_fractional_part(sol["id"])
-                mutated["id"] = self.iteration - 1 + frac
+                mutated["id"] = self.iteration - 1 + random.random()
                 
                 mutated_arr = utils.solution_to_array(mutated)
                 
@@ -116,8 +116,8 @@ class CustomEmitter(EmitterBase):
         print(f"Crossover solutions for iteration {self.iteration}")
         out = []
         
-        # Generate BATCH_SIZE solutions from BATCH_SIZE // 2 pairs
-        for _ in range(self.batch_size // 2):
+        # Generate BATCH_SIZE solutions from BATCH_SIZE
+        for _ in range(self.batch_size):
             try:
                 # 1. Sample two distinct parents
                 while True:
@@ -141,13 +141,8 @@ class CustomEmitter(EmitterBase):
                 
                 offspring = response.json().get("offspring", {})
                 
-                # 3. Create two new children (assuming crossover produces 2, though the API returns 1 'offspring' as one merged result)
-                # Note: The original logic only extracts one 'offspring' dict, let's stick to generating one solution per loop iteration (total BATCH_SIZE // 2 iterations)
-                
-                f1 = utils.get_fractional_part(sol1["id"])
-                f2 = utils.get_fractional_part(sol2["id"])
-                frac = (f1 + f2) % 1
-                child_id = self.iteration - 1 + frac
+                # Assign a unique, iteration-based ID for tracking
+                child_id = self.iteration - 1 + random.random()
                 
                 child_sol = {
                     "id": child_id,
@@ -168,10 +163,5 @@ class CustomEmitter(EmitterBase):
             except requests.RequestException as e:
                 print(f"Error during crossover: {e}")
                 out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
-        
-        if len(out) < self.batch_size:
-            if len(out) == self.batch_size // 2 and self.batch_size % 2 == 0:
-                 out = out + out 
-                 out = out[:self.batch_size] # just in case
 
         return np.array(out)

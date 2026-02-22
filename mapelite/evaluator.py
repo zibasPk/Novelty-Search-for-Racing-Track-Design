@@ -78,8 +78,9 @@ class EvaluatorMAPElite(Evaluator):
         try:
             # 1. Send solution for evaluation
             r = requests.post(f"{BASE_URL}/evaluate", json=sol, timeout=60)
-            r.raise_for_status()
             r_json = r.json()
+            if not r.ok:
+                raise Exception(f"API error {r.status_code}: {r_json.get('error', r.text)}")
 
             # 2. Extract raw fitness metrics and compute descriptor
             fit = r_json.get("fitness", {})
@@ -97,7 +98,7 @@ class EvaluatorMAPElite(Evaluator):
 
 class EvaluatorNoveltySearch(Evaluator):
     def __init__(self,
-                 model_path="embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth"
+                 model_path="mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth"
                  ):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found at {model_path}")
@@ -127,8 +128,9 @@ class EvaluatorNoveltySearch(Evaluator):
         try:
             # 1. Send solution for evaluation
             r = requests.post(f"{BASE_URL}/evaluate", json=sol, timeout=60)
-            r.raise_for_status()
             r_json = r.json()
+            if not r.ok:
+                raise Exception(f"API error {r.status_code}: {r_json.get('error', r.text)}")
 
             # 2. Extract raw fitness metrics
             fit = r_json.get("fitness", {})

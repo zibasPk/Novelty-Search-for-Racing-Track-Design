@@ -16,7 +16,7 @@ TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
 
 # --- MAP-Elites Parameters ---
 ITERATIONS = 1000
-INIT_POPULATION = 100
+RANDOM_POPULATION_ITERS = 100
 BATCH_SIZE = 10
 INVALID_SCORE = -1e9
 
