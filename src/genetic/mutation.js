@@ -2,8 +2,8 @@ export function mutationVoronoi(individual, intensity) {
   const selectedCells = individual.selectedCells.map(cell => ({ ...cell.site }));
   const dataSet = [...individual.dataSet];
   const randomIndex = Math.floor(Math.random() * selectedCells.length);
-  const deltaX = intensity * Math.random();
-  const deltaY = intensity * Math.random();
+  const deltaX = intensity * (Math.random() - 0.5) * 2;
+  const deltaY = intensity * (Math.random() - 0.5) * 2;
   const dataSetIndex = dataSet.findIndex(point =>
     point.x === selectedCells[randomIndex].x &&
     point.y === selectedCells[randomIndex].y
@@ -28,8 +28,8 @@ export function mutationConvexHull(individual, intensity) {
   const randomIndex = Math.floor(Math.random() * dataSetHull.length);
   const originalPoint = { ...dataSetHull[randomIndex] };
 
-  dataSetHull[randomIndex].x += intensity * Math.random();
-  dataSetHull[randomIndex].y += intensity * Math.random();
+  dataSetHull[randomIndex].x += intensity * (Math.random() - 0.5) * 2;
+  dataSetHull[randomIndex].y += intensity * (Math.random() - 0.5) * 2;
 
   const dataSetIndex = dataSet.findIndex(point =>
     point.x === originalPoint.x && point.y === originalPoint.y
