@@ -14,7 +14,7 @@ async function importJsonUtils() {
 	}
 }
 
-export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform') {
+export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform' } = {}) {
 	let trackGenerator;
 
 	if (saveJSON) await importJsonUtils();

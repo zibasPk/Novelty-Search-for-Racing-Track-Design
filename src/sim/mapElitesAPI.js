@@ -44,7 +44,7 @@ app.post('/generate', async (req, res) => {
     const { id, mode, trackSize } = req.body;
 
     const { track, generator, splineVector } =
-      await generateTrack(mode, BBOX, id, trackSize, JSON_DEBUG);
+      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG });
 
     const response = {
       id,
@@ -70,8 +70,14 @@ app.post('/genforweb', async (req, res) => {
   try {
     const { id, mode, trackSize } = req.body;
 
-    const { track, generator, splineVector } =
-      await generateTrack(mode, BBOX, id, trackSize, false);
+    const { track, generator, splineVector } = await generateTrack({
+      mode,
+      bbox: BBOX,
+      seed: id,
+      trackSize,
+      saveJSON: false,
+      rngMode: "perlin"
+    });
 
     const response = {
       mode,
@@ -82,7 +88,54 @@ app.post('/genforweb', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    log.error(`/generate for ${req.body.id}:`, error);
+    log.error(`/genforweb for ${req.body.id}:`, error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   /reconstruct
+   Rebuild a track from its genotype (mode, dataSet, selectedCells, trackSize)
+   and return the spline points + generator metadata.
+   ──────────────────────────────────────────────────────────── */
+app.post('/reconstruct', async (req, res) => {
+  try {
+    const { mode,seed, dataSet, selectedCells, trackSize } = req.body;
+
+    if (!mode || !dataSet) {
+      return res.status(400).json({ error: 'mode and dataSet are required' });
+    }
+
+    const sel = safeArray(selectedCells);
+
+    const timeout = 5000;
+    const { track, generator, splineVector } = await Promise.race([
+      generateTrack({
+        mode,
+        bbox: BBOX,
+        seed,
+        trackSize,
+        saveJSON: false,
+        dataSet,
+        selected: sel
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Track generation timed out')), timeout))
+    ]);
+
+    res.json({
+      mode,
+      track,                           // full spline-smoothed point list
+      splineVector,                    // resampled fixed-length vector
+      trackSize: generator.trackSize,
+      dataSet: generator.dataSet,
+      selectedCells: safeArray(generator.selectedCells).map(cell => ({
+        x: cell.site.x,
+        y: cell.site.y
+      }))
+    });
+  } catch (error) {
+    log.error('/reconstruct error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -136,28 +189,28 @@ app.post('/crossover', async (req, res, next) => {
 
     const [result1, result2] = await Promise.all([
       Promise.race([
-        generateTrack(
+        generateTrack({
           mode,
-          BBOX,
-          parent1.id,
-          parent1.trackSize,
-          false,
-          parent1.dataSet,
-          safeArray(parent1.selectedCells)
-        ),
+          bbox: BBOX,
+          seed: parent1.id,
+          trackSize: parent1.trackSize,
+          saveJSON: false,
+          dataSet: parent1.dataSet,
+          selected: safeArray(parent1.selectedCells)
+        }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Track generation timed out')), timeout))
       ]),
       Promise.race([
-        generateTrack(
+        generateTrack({
           mode,
-          BBOX,
-          parent2.id,
-          parent2.trackSize,
-          false,
-          parent2.dataSet,
-          safeArray(parent2.selectedCells)
-        ),
+          bbox: BBOX,
+          seed: parent2.id,
+          trackSize: parent2.trackSize,
+          saveJSON: false,
+          dataSet: parent2.dataSet,
+          selected: safeArray(parent2.selectedCells)
+        }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Track generation timed out')), timeout))
       ])
@@ -206,15 +259,15 @@ app.post('/mutate', async (req, res, next) => {
 
     const timeout = 5000;
     const { generator: trackGenerator } = await Promise.race([
-      generateTrack(
-        individual.mode,
-        BBOX,
-        individual.id,
-        individual.trackSize,
-        false,
-        individual.dataSet,
-        safeArray(individual.selectedCells)
-      ),
+      generateTrack({
+        mode: individual.mode,
+        bbox: BBOX,
+        seed: individual.id,
+        trackSize: individual.trackSize,
+        saveJSON: false,
+        dataSet: individual.dataSet,
+        selected: safeArray(individual.selectedCells)
+      }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Track generation timed out')), timeout))
     ]);

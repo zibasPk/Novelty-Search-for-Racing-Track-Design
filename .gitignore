@@ -7,7 +7,7 @@ web/src
 
 .vscode/
 
-venv/
+.venv/
 logs/
 
 mapelite/first_test/

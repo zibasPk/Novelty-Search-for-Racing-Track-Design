@@ -85,15 +85,15 @@
       }
 
       try {
-        const result = await generateTrack(
-          trackConfig.mode, 
-          BBOX, 
-          trackConfig.seed, 
-          trackConfig.trackSize, 
-          false, 
-          [], 
-          []
-        );
+        const result = await generateTrack({
+          mode: trackConfig.mode,
+          bbox: BBOX,
+          seed: trackConfig.seed,
+          trackSize: trackConfig.trackSize,
+          saveJSON: false,
+          dataSet: [],
+          selected: []
+        });
         currentTrack = {
           ...result,
           mode: trackConfig.mode,

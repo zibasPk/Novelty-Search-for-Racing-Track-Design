@@ -18,7 +18,7 @@ async function runGen(genIndex) {
     
     // Run the simulation
     const { track, generator, splineVector } =
-          await generateTrack(mode, BBOX, seed, trackSize, false);
+          await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false });
     
     // Convert track from [{x, y}] to [[x, y]]
     const convertedTrack = track.map(point => [point.x, point.y]);

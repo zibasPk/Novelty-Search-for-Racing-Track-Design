@@ -13,10 +13,10 @@ import fs from 'fs/promises';
 
 // for (let seed = startSeed; seed < startSeed + 2000; seed++) {
 //   log.setLevel("warn");
-//   let result = await generateTrack(
-//     "voronoi", BBOX, seed, (seed % 8) + 1,
-//     true, [], []
-//   );
+//   let result = await generateTrack({
+//     mode: "voronoi", bbox: BBOX, seed, trackSize: (seed % 8) + 1,
+//     saveJSON: true, dataSet: [], selected: []
+//   });
 //   trackLengths.push(result.track.length);
 //   log.setLevel("debug");
 //   try {
@@ -60,10 +60,10 @@ genJsonAndXml(trackData);
 async function genJsonAndXml(trackData) {
   try {
     // generate track json
-    const trackResults = await generateTrack(
-      trackData.mode, BBOX, trackData.id, trackData.selectedCells.length,
-      false, trackData.dataSet, trackData.selectedCells
-    );
+    const trackResults = await generateTrack({
+      mode: trackData.mode, bbox: BBOX, seed: trackData.id, trackSize: trackData.selectedCells.length,
+      saveJSON: false, dataSet: trackData.dataSet, selected: trackData.selectedCells
+    });
 
     const seed = trackData.id;
     // translate to XML for TORCS

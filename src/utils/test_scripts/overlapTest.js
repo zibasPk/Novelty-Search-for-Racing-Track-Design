@@ -103,10 +103,10 @@ function segmentsIntersect(p1, p2, q1, q2) {
 }
 
 async function genTrackAndCheckOverlap(trackData) {
-  const trackResults = await generateTrack(
-    trackData.mode, BBOX, trackData.id, trackData.selectedCells.length,
-    false, trackData.dataSet, trackData.selectedCells
-  );
+  const trackResults = await generateTrack({
+    mode: trackData.mode, bbox: BBOX, seed: trackData.id, trackSize: trackData.selectedCells.length,
+    saveJSON: false, dataSet: trackData.dataSet, selected: trackData.selectedCells
+  });
 
   if (trackHasSelfOverlap(trackResults.track, 10, trackData.id)) {
     return trackData.id;

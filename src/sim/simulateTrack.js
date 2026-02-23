@@ -53,10 +53,10 @@ export async function simulate(
   }
 
   // generate track json
-  const trackResults = await generateTrack(
-    mode, BBOX, seed, trackSize,
-    saveJson, dataSet, selected
-  );
+  const trackResults = await generateTrack({
+    mode, bbox: BBOX, seed, trackSize,
+    saveJSON: saveJson, dataSet, selected
+  });
   
 
   // translate to XML for TORCS
