@@ -5,13 +5,13 @@ import { createNoise2D } from 'simplex-noise';
 import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], genType = 'perlin') {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'uniform') {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
     this.noise = createNoise2D(this.randomGen);
     this.voronoi = new Voronoi();
     this.trackSize = trackSize;
-    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints(genType);
+    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints(rngMode);
     this.diagram = this.voronoi.compute(this.dataSet, this.bbox);
 
     this.patchPath = [];

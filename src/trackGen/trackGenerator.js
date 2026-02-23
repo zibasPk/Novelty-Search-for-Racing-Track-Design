@@ -4,8 +4,8 @@ import * as utils from '../utils/utils.js';
 import { JSON_DEBUG } from '../utils/constants.js';
 import * as spline from './splineGenerator.js';
 
-let trackGenerator;
 let savePointsToJson;
+
 
 async function importJsonUtils() {
 	if (typeof window === 'undefined') {
@@ -14,12 +14,14 @@ async function importJsonUtils() {
 	}
 }
 
-export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = []) {
+export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform') {
+	let trackGenerator;
+
 	if (saveJSON) await importJsonUtils();
 	switch (mode) {
 		case 'voronoi':
 			//in case of Voronoi select -> selected Voronoi cells
-			trackGenerator = new VoronoiTrackGenerator(bbox, seed, trackSize, dataSet, selected);
+			trackGenerator = new VoronoiTrackGenerator(bbox, seed, trackSize, dataSet, selected, rngMode);
 			break;
 		case 'convexHull':
 			//in case of convexHull, selected -> selected points from dataset which makes the hull
@@ -38,14 +40,19 @@ export async function generateTrack(mode, bbox, seed, trackSize, saveJSON = JSON
 
 	const minIndex2 = utils.findLongestStraightSegment(splineTrack, 0.01, 0.5);
 	let splineTrack2 = splineTrack.slice(minIndex2).concat(splineTrack.slice(0, minIndex2));
-	splineTrack = splineTrack2; 
+	splineTrack = splineTrack2;
+
+	// check if a track has a self-intersection, if so throw an error
+	if (utils.hasSelfIntersection(splineTrack)) {
+		throw new Error(`Track with seed ${seed} has self-intersection.`);
+	}
 
 	let splineVector = utils.resamplePoints(splineTrack);
 	if (saveJSON) {
 		if (mode === 'voronoi')
 			await savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector);
 		else
-			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector );
+			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector);
 	}
 
 	return { track: splineTrack, generator: trackGenerator, splineVector: splineVector };

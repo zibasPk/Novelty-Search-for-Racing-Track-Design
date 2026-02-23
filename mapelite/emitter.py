@@ -62,15 +62,18 @@ class CustomEmitter(EmitterBase):
                 },
                 timeout=60
             )
-            response.raise_for_status()
+            if not response.ok:
+                    raise Exception(f"API error {response.status_code}: {response.text}")
+                
             return response.json()
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"Error generating solution for iteration {self.iteration}: {e}")
             return None 
     
     def mutate_solutions(self):
         """Mutates existing elite solutions via the external API."""
         print(f"Mutating solutions for iteration {self.iteration}")
+        
         
         # Sample BATCH_SIZE parents from the archive
         parents = self.archive.sample_elites(self.batch_size)
@@ -89,7 +92,8 @@ class CustomEmitter(EmitterBase):
                     },
                     timeout=60
                 )
-                response.raise_for_status()
+                if not response.ok:
+                    raise Exception(f"API error {response.status_code}: {response.text}")
                 
                 mutated = response.json().get("mutated", {})
                 
@@ -105,7 +109,7 @@ class CustomEmitter(EmitterBase):
                 else:
                     out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
             
-            except requests.RequestException as e:
+            except Exception as e:
                 print(f"Error mutating solution ID={sol['id']}: {e}")
                 out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
         
@@ -114,6 +118,12 @@ class CustomEmitter(EmitterBase):
     def crossover_solutions(self):
         """Performs crossover between sampled elite solutions via the external API."""
         print(f"Crossover solutions for iteration {self.iteration}")
+        
+        if self.archive.stats.num_elites < 2:
+            # Not enough elites to perform crossover, return invalid solutions
+            print("Not enough elites for crossover, returning invalid solutions")
+            return np.array([np.full(SOLUTION_DIM, INVALID_SCORE) for _ in range(self.batch_size)])
+        
         out = []
         
         # Generate BATCH_SIZE solutions from BATCH_SIZE
@@ -137,7 +147,8 @@ class CustomEmitter(EmitterBase):
                     },
                     timeout=60
                 )
-                response.raise_for_status()
+                if not response.ok:
+                    raise Exception(f"API error {response.status_code}: {response.text}")
                 
                 offspring = response.json().get("offspring", {})
                 
@@ -160,7 +171,7 @@ class CustomEmitter(EmitterBase):
                 else:
                     out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
             
-            except requests.RequestException as e:
+            except Exception as e:
                 print(f"Error during crossover: {e}")
                 out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
 

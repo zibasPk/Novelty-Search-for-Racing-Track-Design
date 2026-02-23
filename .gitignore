@@ -15,6 +15,7 @@ mapelite/first_test/
 src/data/tests/
 __pycache__/
 
+data/archive/
 
 *.mp4
 *.xml
