@@ -14,7 +14,7 @@ MAX_SELECTED_CELLS = 10  # relevant only for voronoi
 SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 
 TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
 
-# --- MAP-Elites Parameters ---
+# --- QD Parameters ---
 ITERATIONS = 1000
 RANDOM_POPULATION_ITERS = 100
 BATCH_SIZE = 10
@@ -33,4 +33,5 @@ DEBUG_MUTATION = True
 # --- Directories (Create if not exist in main notebook setup) ---
 CHECKPOINT_DIR = "data/checkpoints/"
 HEATMAP_DIR = "data/heatmaps/"
+STATS_DIR = "data/stats/"
 

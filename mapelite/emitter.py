@@ -51,14 +51,16 @@ class CustomEmitter(EmitterBase):
     
     def generate_solution(self):
         """Generates a new track solution by calling the external API."""
-        # print(f"Generating solution for iteration {iteration}") # Mute: too chatty
+        rngMode = "uniform" if self.iteration % 2 == 0 else "perlin"
+            
         try:
             response = requests.post(
                 f"{BASE_URL}/generate",
                 json={
                     "id": self.iteration - 1 + random.random(),
                     "mode": GENERATION_MODE,
-                    "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1])
+                    "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1]),
+                    "rngMode": rngMode
                 },
                 timeout=60
             )

@@ -35,7 +35,7 @@ export class VoronoiTrackGenerator {
   perlinPointGen() {
     let points = [];
 
-    const NUM_OF_FEATURES = 2; // Lower = Larger, wider shapes
+    const NUM_OF_FEATURES = 3; // Lower = Larger, wider shapes, 3 looks best.
     const densityBias = 0.3; // Adjusts overall density (0 to 1)
     const densityPower = 2.0; // Adjusts how sharply density falls off (>= 1)
     const occupiedGridScale = 0.25; // Adjusts how strictly we enforce grid occupancy (0 to 1)

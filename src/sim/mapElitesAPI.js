@@ -41,10 +41,10 @@ const safeArray = arr => (Array.isArray(arr) ? arr : []);
    ──────────────────────────────────────────────────────────── */
 app.post('/generate', async (req, res) => {
   try {
-    const { id, mode, trackSize } = req.body;
+    const { id, mode, trackSize, rngMode } = req.body;
 
     const { track, generator, splineVector } =
-      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG });
+      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG, rngMode});
 
     const response = {
       id,
