@@ -129,6 +129,7 @@ app.post('/reconstruct', async (req, res) => {
       splineVector,                    // resampled fixed-length vector
       trackSize: generator.trackSize,
       dataSet: generator.dataSet,
+      edges: generator.diagram.edges,
       selectedCells: safeArray(generator.selectedCells).map(cell => ({
         x: cell.site.x,
         y: cell.site.y

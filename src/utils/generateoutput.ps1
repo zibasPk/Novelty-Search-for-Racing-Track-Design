@@ -4,6 +4,7 @@ param(
 )
 Write-Host "Launching script for... $XmlFileName"
 # --- CONFIG ---
+$originalLocation = Get-Location
 $baseSourceFolder = "D:\dev\Quality-Diversity-for-Racing-Track-Design\data\voronoi\xmlTracks"
 $sourceFile = Join-Path $baseSourceFolder $XmlFileName
 
@@ -30,4 +31,4 @@ Set-Location $torcsFolder
 
 
 # --- Go back to original folder ---
-Set-Location -Path $PSScriptRoot
+Set-Location $originalLocation
