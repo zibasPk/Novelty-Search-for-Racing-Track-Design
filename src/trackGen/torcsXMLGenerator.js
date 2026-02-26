@@ -154,7 +154,17 @@ export class TorcsXMLGenerator {
         throw e;
       }
     }
-    // recalculate final pose after position correction
+    // Safety net: clamp any remaining negative-length straights to 0.001
+    // TORCS silently skips segments with negative length (step count becomes <= 0
+    // in CreateSegRing), causing a mismatch between JS-computed and TORCS-computed deltas.
+    for (const s of this.sections) {
+      if (s.type === 'straight' && s.length <= 0) {
+        log.debug(`${this.logHeader} Clamping negative straight length ${s.length.toFixed(4)} to 0`);
+        s.length = 0.001;
+      }
+    }
+
+    // recalculate final pose after position correction (and clamping)
     let finalTrackDelta = this.computeTrackDelta(initialPose);
     // log both errors
     if (finalTrackDelta.dx < -0.1 || finalTrackDelta.dx > 0.6 || Math.abs(finalTrackDelta.dy) > 0.1) {
@@ -209,7 +219,7 @@ export class TorcsXMLGenerator {
     const straights = [];
     let pose = { ...startPose };
 
-    // Collect all straights with their starting heading (same as your original function)
+    // Collect all straights with their starting heading
     for (const s of sections) {
       if (s.type === 'straight') {
         straights.push({ section: s, heading: pose.heading });
@@ -226,57 +236,99 @@ export class TorcsXMLGenerator {
       }
     }
 
-    if (straights.length === 0) return; // nothing to fix
+    if (straights.length === 0) return;
 
-    const ex = -error.dx; // We want to move the endpoint back by the error amount
+    const ex = -error.dx;
     const ey = -error.dy;
 
-    // --- Start of new logic: Least-Squares Adjustment ---
+    // Least-Squares with non-negative length constraints (active-set method).
+    // TORCS skips straight segments with negative length (step count becomes <= 0),
+    // so we must ensure all straight lengths remain >= 0 after correction.
 
-    // We are solving the system A * deltaL = E for the vector of length changes deltaL.
-    // Where A = [[cos(h1), cos(h2), ...], [sin(h1), sin(h2), ...]]
-    // and E = [ex, ey].
-    // The solution that minimizes the sum of squares of deltaL is:
-    // deltaL = A_transpose * inverse(A * A_transpose) * E
-
-
-    // --- Start of new and modified logic ---
-
-    // Handle the edge case of a single straight section
     if (straights.length === 1) {
       throw new PositionCorrectionError("Only one straight section present.");
     }
 
-    // 1. Calculate the components of the 2x2 matrix C = A * A_transpose
-    let s_c2 = 0, s_s2 = 0, s_sc = 0;
-    for (const { heading } of straights) {
-      const c = Math.cos(heading);
-      const s = Math.sin(heading);
-      s_c2 += c * c;
-      s_s2 += s * s;
-      s_sc += s * c;
-    }
+    // Active set: iteratively pin straights that would go negative to length 0,
+    // then re-solve for the remaining straights.
+    let activeStraights = straights.map((s, i) => ({ ...s, idx: i }));
+    const pinnedDeltas = new Map(); // index -> deltaLen applied (= -originalLength)
 
-    // 2. Calculate the determinant of C. If it's near zero, the system can't be solved
-    // (this happens if all straights are parallel).
-    const det = s_c2 * s_s2 - s_sc * s_sc;
-    if (Math.abs(det) < 1e-9) {
-      throw new PositionCorrectionError("All straight sections are parallel.");
-    }
-    const inv_det = 1 / det;
+    for (let iter = 0; iter <= straights.length; iter++) {
+      if (activeStraights.length === 0) break;
 
-    // 3. Calculate the vector V = inverse(C) * E
-    const v0 = inv_det * (ex * s_s2 - ey * s_sc);
-    const v1 = inv_det * (-ex * s_sc + ey * s_c2);
+      // Compute remaining error after accounting for pinned straights
+      let rex = ex, rey = ey;
+      for (const [idx, dl] of pinnedDeltas) {
+        rex -= dl * Math.cos(straights[idx].heading);
+        rey -= dl * Math.sin(straights[idx].heading);
+      }
 
-    // 4. Calculate the change in length for each straight: deltaL_i = D_i * V
-    for (const { section, heading } of straights) {
-      const c = Math.cos(heading);
-      const s = Math.sin(heading);
-      const deltaLen = c * v0 + s * v1;
-      section.length += deltaLen;
+      if (activeStraights.length === 1) {
+        // Single active straight: project error onto its direction
+        const { section, heading } = activeStraights[0];
+        const c = Math.cos(heading);
+        const s = Math.sin(heading);
+        const deltaLen = (rex * c + rey * s) / (c * c + s * s);
+        if (section.length + deltaLen < 0) {
+          section.length = 0;
+        } else {
+          section.length += deltaLen;
+        }
+        break;
+      }
+
+      // Least-squares for multiple active straights
+      let s_c2 = 0, s_s2 = 0, s_sc = 0;
+      for (const { heading } of activeStraights) {
+        const c = Math.cos(heading);
+        const s = Math.sin(heading);
+        s_c2 += c * c;
+        s_s2 += s * s;
+        s_sc += s * c;
+      }
+
+      const det = s_c2 * s_s2 - s_sc * s_sc;
+      if (Math.abs(det) < 1e-9) {
+        throw new PositionCorrectionError("All straight sections are parallel.");
+      }
+      const inv_det = 1 / det;
+      const v0 = inv_det * (rex * s_s2 - rey * s_sc);
+      const v1 = inv_det * (-rex * s_sc + rey * s_c2);
+
+      // Check if any active straight would go negative
+      let worstIdx = -1;
+      let worstNewLen = Infinity;
+      const deltas = [];
+      for (let i = 0; i < activeStraights.length; i++) {
+        const { section, heading } = activeStraights[i];
+        const c = Math.cos(heading);
+        const s = Math.sin(heading);
+        const deltaLen = c * v0 + s * v1;
+        deltas.push(deltaLen);
+        const newLen = section.length + deltaLen;
+        if (newLen < 0 && newLen < worstNewLen) {
+          worstNewLen = newLen;
+          worstIdx = i;
+        }
+      }
+
+      if (worstIdx === -1) {
+        // All lengths remain non-negative: apply corrections
+        for (let i = 0; i < activeStraights.length; i++) {
+          activeStraights[i].section.length += deltas[i];
+        }
+        break;
+      } else {
+        // Pin the most violated straight to 0 and re-solve
+        const pinned = activeStraights[worstIdx];
+        const pinnedDelta = -pinned.section.length; // set to 0
+        pinnedDeltas.set(pinned.idx, pinnedDelta);
+        pinned.section.length = 0;
+        activeStraights.splice(worstIdx, 1);
+        log.debug(`${this.logHeader} Pinned straight at index ${pinned.idx} to 0 (would have gone to ${worstNewLen.toFixed(2)})`);
+      }
     }
-    // --- End of new logic ---
   }
 
 
@@ -314,7 +366,7 @@ export class TorcsXMLGenerator {
       return a + Math.abs(proj) * s.section.length;
     }, 0);
 
-    // distribute correction
+    // distribute correction (clamped to prevent negative lengths)
     for (const { section, heading } of straights) {
 
       // how much of the error projects along this straight's direction
@@ -324,9 +376,8 @@ export class TorcsXMLGenerator {
 
       const w = (Math.abs(proj) * section.length) / totalProjectedLength;
 
-      // apply proportional correction (damped)
-      const deltaLen = proj * w;
-
+      // apply proportional correction (damped), clamped to prevent negative lengths
+      const deltaLen = Math.max(proj * w, -section.length);
 
       section.length += deltaLen;
     }
