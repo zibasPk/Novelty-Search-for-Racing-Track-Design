@@ -32,3 +32,11 @@ export const COLORS = {
     [76, 201, 240]    // Vivid Sky Blue
   ]
 };
+
+export const DEFAULT_PERLIN_PARAMETERS = {
+  NOISE_FREQUENCY: 3, // Lower = Larger, wider shapes, 3 looks best.
+  densityThreshold: 0.3, // Adjusts overall density (0 to 1)
+  densityExponent: 2.0, // Adjusts how sharply density falls off (>= 1)
+  minDistScale: 0.25 // Scales the minimum distance between Voronoi sites (0.1 to 1, lower = more sites)
+};
+  

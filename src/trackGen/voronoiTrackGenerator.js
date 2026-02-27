@@ -1,14 +1,15 @@
 import Voronoi from '../lib/rhill-voronoi-core.js';
-import { NUMBER_OF_VORONOI_SITES } from "../utils/constants.js"
+import { NUMBER_OF_VORONOI_SITES, DEFAULT_PERLIN_PARAMETERS} from "../utils/constants.js"
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
 import { createNoise2D } from 'simplex-noise';
 import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'uniform') {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'perlin', perlin_parameters = null) {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
     this.noise = createNoise2D(this.randomGen);
+    this.perlin_parameters = perlin_parameters || DEFAULT_PERLIN_PARAMETERS;
     this.voronoi = new Voronoi();
     this.trackSize = trackSize;
     this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints(rngMode);
@@ -18,6 +19,7 @@ export class VoronoiTrackGenerator {
     this.selectedCells = selectedVoronoiSites.length > 0 ?
       this.sitesFromInput(selectedVoronoiSites) : this.selectCellsForTrack(trackSize);
     this.trackEdges = this.findTrackEdges();
+
   }
 
   generatePoints(genType) {
@@ -35,17 +37,17 @@ export class VoronoiTrackGenerator {
   perlinPointGen() {
     let points = [];
 
-    const NUM_OF_FEATURES = 3; // Lower = Larger, wider shapes, 3 looks best.
-    const densityBias = 0.3; // Adjusts overall density (0 to 1)
-    const densityPower = 2.0; // Adjusts how sharply density falls off (>= 1)
-    const occupiedGridScale = 0.25; // Adjusts how strictly we enforce grid occupancy (0 to 1)
+    const noiseFrequency = this.perlin_parameters.NOISE_FREQUENCY;
+    const densityThreshold = this.perlin_parameters.densityThreshold;
+    const densityExponent = this.perlin_parameters.densityExponent;
+    const minSpacingScale = this.perlin_parameters.minDistScale;
 
     const width = this.bbox.xr - this.bbox.xl;
     const height = this.bbox.yb - this.bbox.yt;
-    let noiseScale = NUM_OF_FEATURES / Math.max(width, height);
+    let noiseScale = noiseFrequency / Math.max(width, height);
 
     const area = width * height;
-    const gridCellSize = Math.sqrt(area / NUMBER_OF_VORONOI_SITES) * occupiedGridScale;
+    const gridCellSize = Math.sqrt(area / NUMBER_OF_VORONOI_SITES) * minSpacingScale;
     const occupiedGrid = new Set();
 
     let safetyCounter = 0; // To prevent infinite loops
@@ -67,8 +69,8 @@ export class VoronoiTrackGenerator {
       n = (n + 1) / 2;
 
       n = Math.pow(
-        Math.max(0, n - densityBias),
-        densityPower
+        Math.max(0, n - densityThreshold),
+        densityExponent
       );
 
       if (this.randomGen() < n) {

@@ -14,14 +14,14 @@ async function importJsonUtils() {
 	}
 }
 
-export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform' } = {}) {
+export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform' , perlin_parameters = null } = {}) {
 	let trackGenerator;
 
 	if (saveJSON) await importJsonUtils();
 	switch (mode) {
 		case 'voronoi':
 			//in case of Voronoi select -> selected Voronoi cells
-			trackGenerator = new VoronoiTrackGenerator(bbox, seed, trackSize, dataSet, selected, rngMode);
+			trackGenerator = new VoronoiTrackGenerator(bbox, seed, trackSize, dataSet, selected, rngMode, perlin_parameters);
 			break;
 		case 'convexHull':
 			//in case of convexHull, selected -> selected points from dataset which makes the hull

@@ -68,7 +68,7 @@ app.post('/generate', async (req, res) => {
 
 app.post('/genforweb', async (req, res) => {
   try {
-    const { id, mode, trackSize } = req.body;
+    const { id, mode, trackSize , perlin_parameters} = req.body;
 
     const { track, generator, splineVector } = await generateTrack({
       mode,
@@ -76,7 +76,8 @@ app.post('/genforweb', async (req, res) => {
       seed: id,
       trackSize,
       saveJSON: false,
-      rngMode: "perlin"
+      rngMode: "perlin",
+      perlin_parameters
     });
 
     const response = {
