@@ -4,14 +4,14 @@ import { generateTrack } from '../trackGen/trackGenerator.js';
 import { crossover, crossover2 } from '../genetic/crossoverVoronoi.js';
 import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull.js';
 import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
-import { BBOX, JSON_DEBUG,LOG_DIR } from '../utils/constants.js';
+import { BBOX, JSON_DEBUG, LOG_DIR } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
 import { initLogger } from '../utils/logger.js';
 
 
 // setup logging
 let dateTime = new Date().toISOString().replace(/:/g, '-');
-let logPath = LOG_DIR +`Api_${dateTime}.log`;
+let logPath = LOG_DIR + `Api_${dateTime}.log`;
 
 let log = initLogger({
   filePath: logPath,
@@ -44,7 +44,7 @@ app.post('/generate', async (req, res) => {
     const { id, mode, trackSize, rngMode } = req.body;
 
     const { track, generator, splineVector } =
-      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG, rngMode});
+      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG, rngMode });
 
     const response = {
       id,
@@ -101,7 +101,7 @@ app.post('/genforweb', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/reconstruct', async (req, res) => {
   try {
-    const { mode,seed, dataSet, selectedCells, trackSize } = req.body;
+    const { mode, seed, dataSet, selectedCells, trackSize } = req.body;
 
     if (!mode || !dataSet) {
       return res.status(400).json({ error: 'mode and dataSet are required' });
@@ -181,7 +181,7 @@ app.post('/evaluate', async (req, res) => {
 app.post('/crossover', async (req, res, next) => {
   log.info('Crossover endpoint called');
   try {
-    const { parent1, parent2, mode } = req.body;
+    const { parent1, parent2, mode, genetic_seed } = req.body;
     if (!parent1 || !parent2 ||
       !parent1.dataSet || !parent2.dataSet) {
       return res.status(400).json({ error: 'Invalid parent data' });
@@ -225,8 +225,8 @@ app.post('/crossover', async (req, res, next) => {
       log.debug('CROSSOVER VORONOI');
       try {
         const result = Math.random() < 0 //mix between two crossovers , 0.5 to balance, 1 for only crossover method 1 , 0 only method 2 
-          ? crossover(trackGenerator1, trackGenerator2, true)
-          : crossover2(trackGenerator2, trackGenerator1, true);
+          ? crossover(trackGenerator1, trackGenerator2, true, genetic_seed)
+          : crossover2(trackGenerator2, trackGenerator1, true, seed);
 
         log.debug("Dataset lenght: ", result.ds.length);
         log.debug("Selected cells lenght: ", result.sel.length);
@@ -254,7 +254,7 @@ app.post('/crossover', async (req, res, next) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/mutate', async (req, res, next) => {
   try {
-    const { individual, intensityMutation = 50 } = req.body;
+    const { individual, intensityMutation = 50, genetic_seed } = req.body;
     if (!individual || !individual.dataSet) {
       return res.status(400).json({ error: 'Invalid individual data' });
     }
@@ -274,15 +274,18 @@ app.post('/mutate', async (req, res, next) => {
         setTimeout(() => reject(new Error('Track generation timed out')), timeout))
     ]);
 
+
+    let mutationSeed = genetic_seed; // we use the id because its generated at random beforehand. Watchout same ids will generate the same mutation.
+
     if (individual.mode === 'voronoi') {
-      const mutatedData = mutationVoronoi(trackGenerator, intensityMutation);
+      const mutatedData = mutationVoronoi(trackGenerator, intensityMutation, mutationSeed);
       return res.json({
         mutated: { dataSet: mutatedData.ds, selectedCells: mutatedData.sel }
       });
     }
 
     if (individual.mode === 'convexHull') {
-      const mutatedData = mutationConvexHull(trackGenerator, intensityMutation);
+      const mutatedData = mutationConvexHull(trackGenerator, intensityMutation, mutationSeed);
       return res.json({ mutated: { dataSet: mutatedData.ds } });
     }
 

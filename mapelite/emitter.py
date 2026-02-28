@@ -14,10 +14,11 @@ class CustomEmitter(EmitterBase):
     A custom emitter for MAP-Elites that handles initial generation, 
     API-based mutation, and API-based crossover.
     """
-    def __init__(self, archive, solution_dim, batch_size=BATCH_SIZE, bounds=None):
+    def __init__(self, archive, solution_dim, batch_size=BATCH_SIZE, bounds=None, seed=None):
         super().__init__(archive, solution_dim=solution_dim, bounds=bounds)
         self.batch_size = batch_size
         self.iteration = 0
+        self.seed = seed
 
     def ask(self):
         """Generates a batch of solutions for the scheduler to evaluate."""
@@ -84,13 +85,15 @@ class CustomEmitter(EmitterBase):
         for i in range(self.batch_size):
             arr = parents["solution"][i]
             sol = utils.array_to_solution(arr)
+            seed = self.iteration - 1 + random.random()  # Unique seed for mutation based on iteration and randomness
             
             try:
                 response = requests.post(
                     f"{BASE_URL}/mutate",
                     json={
                         "individual": sol,
-                        "intensityMutation": 20 # Constant mutation intensity
+                        "intensityMutation": 20, # Constant mutation intensity
+                        "genetic_seed": seed
                     },
                     timeout=60
                 )
@@ -101,7 +104,7 @@ class CustomEmitter(EmitterBase):
                 
                 # Assign a unique, iteration-based ID for tracking
                 frac = utils.get_fractional_part(sol["id"])
-                mutated["id"] = self.iteration - 1 + random.random()
+                mutated["id"] = seed
                 
                 mutated_arr = utils.solution_to_array(mutated)
                 
@@ -138,14 +141,18 @@ class CustomEmitter(EmitterBase):
                     sol2 = utils.array_to_solution(parents["solution"][1])
                     if sol1["id"] != sol2["id"]:
                         break
-                        
+                    
+                # Assign a unique, iteration-based ID for tracking
+                seed = self.iteration - 1 + random.random()
+                   
                 # 2. Call the external crossover API
                 response = requests.post(
                     f"{BASE_URL}/crossover",
                     json={
                         "mode": GENERATION_MODE,
                         "parent1": sol1,
-                        "parent2": sol2
+                        "parent2": sol2,
+                        "genetic_seed": seed
                     },
                     timeout=60
                 )
@@ -154,8 +161,8 @@ class CustomEmitter(EmitterBase):
                 
                 offspring = response.json().get("offspring", {})
                 
-                # Assign a unique, iteration-based ID for tracking
-                child_id = self.iteration - 1 + random.random()
+                child_id = seed  # Unique ID for the child based on iteration and randomness
+               
                 
                 child_sol = {
                     "id": child_id,

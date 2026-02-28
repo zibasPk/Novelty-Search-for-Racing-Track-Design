@@ -1,7 +1,8 @@
 import { BBOX, NUMBER_OF_VORONOI_SITES, MAX_NUMBER_OF_SELECTED_CELLS } from "../utils/constants.js"
 import log from "loglevel"
 
-export function crossover(parent1, parent2, regularize = false) {
+export function crossover(parent1, parent2, regularize = false, seed = null) {
+  if (seed !== null) Math.seedrandom(seed);
   // Extract dataset from each parent
   let dataSet1 = parent1.dataSet;
   let dataSet2 = parent2.dataSet;
@@ -106,7 +107,9 @@ function computeGeometricCenter(vertices) {
 
 // ---
 
-export function crossover2(parent1, parent2, regularize = false) {
+export function crossover2(parent1, parent2, regularize = false,seed = null) {
+  
+  if (seed !== null) Math.seedrandom(seed);
   const selectedCellSites = [];
   const distanceThreshold = BBOX.xr * 0.02;
   let combinedDataSet = [];

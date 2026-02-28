@@ -1,4 +1,6 @@
-export function mutationVoronoi(individual, intensity) {
+export function mutationVoronoi(individual, intensity, seed = null) {
+  if (seed !== null) Math.seedrandom(seed);
+
   const selectedCells = individual.selectedCells.map(cell => ({ ...cell.site }));
   const dataSet = [...individual.dataSet];
   const randomIndex = Math.floor(Math.random() * selectedCells.length);
@@ -21,7 +23,8 @@ export function mutationVoronoi(individual, intensity) {
 }
 
 //let's move randomly a point in the convexHull
-export function mutationConvexHull(individual, intensity) {
+export function mutationConvexHull(individual, intensity, seed = null) {
+  if (seed !== null) Math.seedrandom(seed);
   const dataSetHull = [...individual.dataSetHull];
   const dataSet = [...individual.dataSet];
 
