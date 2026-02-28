@@ -5,7 +5,7 @@ import { createNoise2D } from 'simplex-noise';
 import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'perlin', perlin_parameters = null) {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'uniform', perlin_parameters = null) {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
     this.noise = createNoise2D(this.randomGen);
