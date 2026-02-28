@@ -14,20 +14,21 @@ authors = [
     {name = "Milo Brontesi", email = "milo.brontesi@gmail.com"}
 ]
 dependencies = [
-    "numpy",
-    "requests",
-    "joblib",
-    "ribs[all]>=0.8.0",
-    "umap-learn",
-    "scipy",
-    "scikit-learn",
-    "pandas",
-    "matplotlib",
-    "seaborn",
-    "dash",
-    "plotly",
-    "torch",
-    "tqdm"
+    "numpy==2.4.2",
+    "requests==2.32.5",
+    "joblib==1.5.0",
+    "ribs[all]==0.8.1",
+    "umap-learn==0.5.11",
+    "scipy==1.17.1",
+    "scikit-learn==1.8.0",
+    "pandas==3.0.1",
+    "matplotlib==3.10.8",
+    "seaborn==0.13.2",
+    "dash==4.0.0",
+    "plotly==6.5.2",
+    "torch==2.10.0",
+    "tqdm==4.67.3",
+    "dask[distributed]==2026.1.2",
 ]
 
 [project.optional-dependencies]
