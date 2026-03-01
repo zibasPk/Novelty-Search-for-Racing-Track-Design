@@ -60,7 +60,7 @@ app.post('/generate', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    log.error(`/generate for ${req.body.id}:`, error);
+    log.error(`/generate for ${req.body.id}:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -226,16 +226,16 @@ app.post('/crossover', async (req, res, next) => {
       try {
         const result = Math.random() < 0 //mix between two crossovers , 0.5 to balance, 1 for only crossover method 1 , 0 only method 2 
           ? crossover(trackGenerator1, trackGenerator2, true, genetic_seed)
-          : crossover2(trackGenerator2, trackGenerator1, true, seed);
+          : crossover2(trackGenerator2, trackGenerator1, true, genetic_seed);
 
         log.debug("Dataset lenght: ", result.ds.length);
         log.debug("Selected cells lenght: ", result.sel.length);
 
         return res.json({ offspring: { ds: result.ds, sel: result.sel } });
       } catch (err) {
-        log.error('Error during crossover:', err);
-        log.error('Parent 1:', JSON.stringify(parent1, null, 2));
-        log.error('Parent 2:', JSON.stringify(parent2, null, 2));
+        log.error('Error during crossover:', err.message);
+        log.error('Parent 1:', parent1.id);
+        log.error('Parent 2:', parent2.id);
         return res.status(500).json({ error: 'Crossover failed.' });
       }
     }
@@ -291,7 +291,7 @@ app.post('/mutate', async (req, res, next) => {
 
     res.status(400).json({ error: 'Invalid track generation mode in /mutate' });
   } catch (error) {
-    log.error(`/mutate for ${req.body.individual.id}:`, error);
+    log.error(`/mutate for ${req.body.individual.id}:`, error.message);
     next(error);
   }
 });

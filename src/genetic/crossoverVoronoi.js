@@ -1,8 +1,12 @@
 import { BBOX, NUMBER_OF_VORONOI_SITES, MAX_NUMBER_OF_SELECTED_CELLS } from "../utils/constants.js"
+import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
+
 import log from "loglevel"
 
 export function crossover(parent1, parent2, regularize = false, seed = null) {
-  if (seed !== null) Math.seedrandom(seed);
+  let random = Math.random;
+  if (seed !== null) random = prng_alea(seed);
+
   // Extract dataset from each parent
   let dataSet1 = parent1.dataSet;
   let dataSet2 = parent2.dataSet;
@@ -14,7 +18,7 @@ export function crossover(parent1, parent2, regularize = false, seed = null) {
 
   const center = computeGeometricCenter([...parent1selected, ...parent2selected]);
 
-  const { slope, intercept } = randomSlopeThroughCenter(center);
+  const { slope, intercept } = randomSlopeThroughCenter(center, random);
 
   const criteria = (data) => data.y <= slope * data.x + intercept;
 
@@ -88,9 +92,9 @@ export function crossover(parent1, parent2, regularize = false, seed = null) {
   return { ds: combinedDataSet, sel: combinedSelectedCells, lineParameters: { slope, intercept } };
 }
 
-function randomSlopeThroughCenter(center) {
+function randomSlopeThroughCenter(center, randomGenerator) {
   // Generate a random angle in radians between -π/2 and π/2
-  const angle = Math.random() * Math.PI - Math.PI / 2;
+  const angle = randomGenerator() * Math.PI - Math.PI / 2;
   const slope = Math.tan(angle);
   const intercept = center.y - slope * center.x;
   return { slope, intercept };
@@ -108,8 +112,7 @@ function computeGeometricCenter(vertices) {
 // ---
 
 export function crossover2(parent1, parent2, regularize = false,seed = null) {
-  
-  if (seed !== null) Math.seedrandom(seed);
+
   const selectedCellSites = [];
   const distanceThreshold = BBOX.xr * 0.02;
   let combinedDataSet = [];
