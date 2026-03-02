@@ -13,13 +13,89 @@ import matplotlib.pyplot as plt
 from ribs.archives import AddStatus
 from dask.distributed import Client, LocalCluster
 
-from mapelite.evaluator import EvaluatorNoveltySearch
+from mapelite.evaluator import EvaluatorMetrics
 from mapelite.config import (
     BATCH_SIZE,
+    BUFFER_DIR,
     CHECKPOINT_EVERY,
     INVALID_SCORE,
 )
 from utils import array_to_solution
+
+
+# ── Evaluation Buffer ───────────────────────────────────────────────────────
+
+class EvaluationBuffer:
+    """Accumulates every evaluated track (id, spline data, embedding) and
+    persists them to a JSON file in ``data/buffers/``.
+
+    The buffer is append-only: on resume it loads existing entries and
+    continues appending.  It is saved at every checkpoint interval and
+    once more when the loop finishes.
+    """
+
+    def __init__(self, buffer_path: str):
+        self.buffer_path = buffer_path
+        os.makedirs(os.path.dirname(buffer_path), exist_ok=True)
+        self.entries: list[dict] = []
+        self._load()
+
+    # -- persistence ----------------------------------------------------------
+
+    def _load(self):
+        """Resume from an existing buffer file, if present."""
+        if os.path.exists(self.buffer_path):
+            with open(self.buffer_path, "r") as f:
+                data = json.load(f)
+            self.entries = data.get("tracks", [])
+            print(f"[Buffer] Resumed {len(self.entries)} entries from {self.buffer_path}")
+        else:
+            print(f"[Buffer] No existing buffer found — starting empty.")
+
+    def save(self):
+        """Write the full buffer to disk."""
+        payload = {
+            "total": len(self.entries),
+            "timestamp": datetime.datetime.now().isoformat(),
+            "tracks": self.entries,
+        }
+        with open(self.buffer_path, "w") as f:
+            json.dump(payload, f)
+        print(f"[Buffer] Saved {len(self.entries)} entries to {self.buffer_path}")
+
+    # -- recording ------------------------------------------------------------
+
+    def record(self, sol_id, sol_dict: dict, embedding, score: float, ok: bool):
+        """Record a single evaluated track.
+
+        Parameters
+        ----------
+        sol_id : float | int
+            Unique solution identifier.
+        sol_dict : dict
+            Solution dictionary produced by ``array_to_solution`` containing
+            ``dataSet`` and ``selectedCells`` (the data needed to reconstruct
+            the spline).
+        embedding : array-like
+            Behavioural descriptor / embedding vector.
+        score : float
+            Fitness score returned by the evaluator.
+        ok : bool
+            Whether the evaluation succeeded.
+        """
+        entry = {
+            "id": sol_id,
+            "dataSet": sol_dict.get("dataSet", []),
+            "selectedCells": sol_dict.get("selectedCells", []),
+            "mode": sol_dict.get("mode", ""),
+            "embedding": np.asarray(embedding).tolist(),
+            "score": float(score),
+            "valid": ok,
+        }
+        self.entries.append(entry)
+
+    def __len__(self):
+        return len(self.entries)
 
 
 # ── Dask ────────────────────────────────────────────────────────────────────
@@ -31,7 +107,7 @@ def setup_dask(batch_size=BATCH_SIZE):
     client = Client(cluster)
     print(f"Dask Dashboard link: {client.dashboard_link}")
 
-    evaluator = EvaluatorNoveltySearch()
+    evaluator = EvaluatorMetrics()
     evaluator_future = client.scatter(evaluator, broadcast=True)
     print(f"Evaluator scattered to {batch_size} Dask workers")
 
@@ -109,6 +185,7 @@ def run_qd_loop(
     stats,
     global_best_score,
     global_best_id,
+    buffer_path=None,
 ):
     """
     Generic ask → evaluate → tell loop used by every QD variant.
@@ -117,6 +194,10 @@ def run_qd_loop(
     -------
     global_best_score, global_best_id, stats  (updated in-place & returned)
     """
+    # ── Evaluation buffer setup ──
+    if buffer_path is None:
+        buffer_path = os.path.join(BUFFER_DIR, "buffer.json")
+    evaluation_buffer = EvaluationBuffer(buffer_path)
 
     for i in range(start_iter, total_iters):
 
@@ -130,7 +211,7 @@ def run_qd_loop(
         gathered = [f.result() for f in futs]
 
         obj_list, clean_solutions = [], []
-        for sol_id, ok, msg, score, desc in gathered:
+        for (sol_id, ok, msg, score, desc), sol_dict in zip(gathered, sol_dicts):
 
             if not ok:
                 print(f"Warning: clamping bad score for ID={sol_id} ({msg})")
@@ -140,6 +221,9 @@ def run_qd_loop(
                 if score > global_best_score:
                     global_best_score = score
                     global_best_id = sol_id
+
+            # Record every evaluation in the buffer
+            evaluation_buffer.record(sol_id, sol_dict, desc, score, ok)
 
             clean_solutions.append((score, desc))
             obj_list.append(score)
@@ -216,6 +300,12 @@ def run_qd_loop(
             stats_path = os.path.join(stats_dir, stats_filename)
             with open(stats_path, "wb") as f:
                 pickle.dump(stats, f)
+
+            # Persist the evaluation buffer alongside each checkpoint
+            evaluation_buffer.save()
+
+    # Final save to ensure nothing is lost
+    evaluation_buffer.save()
 
     return global_best_score, global_best_id, stats
 

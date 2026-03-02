@@ -34,4 +34,5 @@ DEBUG_MUTATION = True
 CHECKPOINT_DIR = "data/checkpoints/"
 HEATMAP_DIR = "data/heatmaps/"
 STATS_DIR = "data/stats/"
+BUFFER_DIR = "data/buffers/"
 
