@@ -5,8 +5,7 @@ import requests
 import joblib
 import torch
 
-
-import embeddings.models.metrics_model as metrics_model
+from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
 from utils import EMBEDDING_MODEL, pca_align
 from abc import ABC, abstractmethod
 from config import (
@@ -97,20 +96,25 @@ class EvaluatorMAPElite(Evaluator):
 
 
 class EvaluatorMetrics(Evaluator):
-    def __init__(self,
-                 model_path="mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth"
-                 ):
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Model file not found at {model_path}")
+    def __init__(self, embedding_model, embedding_dim, device):
+        self.embedding_model = embedding_model
+        self.embedding_dim = embedding_dim
+        self.device = device
+        self.preprocessor = MetricsPreprocessor()
+        
+    @classmethod
+    def load_pretrained(cls, path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Model file not found at {path}")
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
-        self.embedding_model, self.embedding_dim = metrics_model.load_model(
-            self.device, model_path)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        embedding_model, embedding_dim = MetricsTransformerVAE.load_pretrained(path, device)
+        
+        return cls(embedding_model, embedding_dim, device)
 
     def descriptor_from_metrics(self, metrics):
         metrics = np.array(metrics, dtype=np.float32)
-        metrics = metrics_model.preprocess_data(metrics)
+        metrics = self.preprocessor(metrics)
         data_tensor = torch.tensor(metrics, dtype=torch.float32).unsqueeze(0).to(self.device)
 
         with torch.no_grad():

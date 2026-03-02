@@ -107,7 +107,7 @@ def setup_dask(batch_size=BATCH_SIZE):
     client = Client(cluster)
     print(f"Dask Dashboard link: {client.dashboard_link}")
 
-    evaluator = EvaluatorMetrics()
+    evaluator = EvaluatorMetrics.load_pretrained("mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth")
     evaluator_future = client.scatter(evaluator, broadcast=True)
     print(f"Evaluator scattered to {batch_size} Dask workers")
 
@@ -313,7 +313,7 @@ def run_qd_loop(
 # ── Visualization ───────────────────────────────────────────────────────────
 
 def plot_stats(stats, title="QD Run Statistics"):
-    """4-panel run-statistics plot (archive growth, fitness, elite bars, cumulative)."""
+    """5-row run-statistics plot (archive growth, fitness, new elites, substituted elites, cumulative)."""
 
     iterations    = [s["iteration"] + 1 for s in stats]
     archive_sizes = [s["Archive size"] for s in stats]
@@ -325,18 +325,18 @@ def plot_stats(stats, title="QD Run Statistics"):
     # Filter out INVALID_SCORE so the y-axis isn't crushed
     iter_best_clean = [v if v != INVALID_SCORE else np.nan for v in iter_best]
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(14, 16), sharex=True)
     fig.suptitle(f"{title} — Run Statistics", fontsize=16, fontweight="bold")
 
     # 1. Archive size
-    ax = axes[0, 0]
+    ax = axes[0]
     ax.plot(iterations, archive_sizes, color="tab:blue", linewidth=1.5)
     ax.set_ylabel("Archive Size")
     ax.set_title("Archive Growth")
     ax.grid(True, alpha=0.3)
 
     # 2. Best fitness
-    ax = axes[0, 1]
+    ax = axes[1]
     ax.plot(iterations, iter_best_clean, label="Iteration Best",
             color="tab:orange", alpha=0.6, linewidth=1)
     ax.plot(iterations, global_best, label="Global Best",
@@ -346,21 +346,26 @@ def plot_stats(stats, title="QD Run Statistics"):
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # 3. Elites per iteration (stacked bar)
-    ax = axes[1, 0]
     bar_width = max(1, len(iterations) // 200)
+
+    # 3. New elites per iteration
+    ax = axes[2]
     ax.bar(iterations, new_elites, width=bar_width,
-           label="New Elites", color="tab:green", alpha=0.8)
-    ax.bar(iterations, sub_elites, width=bar_width, bottom=new_elites,
-           label="Substituted Elites", color="tab:purple", alpha=0.8)
-    ax.set_xlabel("Iteration")
+           color="tab:red", alpha=0.8)
     ax.set_ylabel("Count")
-    ax.set_title("Elite Insertions per Iteration")
-    ax.legend()
+    ax.set_title("New Elites per Iteration")
     ax.grid(True, alpha=0.3)
 
-    # 4. Cumulative elites
-    ax = axes[1, 1]
+    # 4. Substituted elites per iteration
+    ax = axes[3]
+    ax.bar(iterations, sub_elites, width=bar_width,
+           color="tab:blue", alpha=0.8)
+    ax.set_ylabel("Count")
+    ax.set_title("Substituted Elites per Iteration")
+    ax.grid(True, alpha=0.3)
+
+    # 5. Cumulative elites
+    ax = axes[4]
     cum_new = np.cumsum(new_elites)
     cum_sub = np.cumsum(sub_elites)
     ax.plot(iterations, cum_new, label="Cumulative New",
@@ -375,7 +380,7 @@ def plot_stats(stats, title="QD Run Statistics"):
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.show()
 
     # Summary table
