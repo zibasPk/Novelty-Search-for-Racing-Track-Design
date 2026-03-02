@@ -96,7 +96,7 @@ class EvaluatorMAPElite(Evaluator):
         return sol_id, ok, msg, fit_score, desc
 
 
-class EvaluatorNoveltySearch(Evaluator):
+class EvaluatorMetrics(Evaluator):
     def __init__(self,
                  model_path="mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth"
                  ):

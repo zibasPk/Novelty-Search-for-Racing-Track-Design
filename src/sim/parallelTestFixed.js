@@ -6,9 +6,9 @@ import { JSON_DEBUG, SIMULATION_TIMEOUT, LOG_DIR} from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
 import { initLogger } from '../utils/logger.js';
 
-const STARTING_SEED = 21300;
+const STARTING_SEED = 10000;
 // const STARTING_SEED = 0;
-const TOTAL_UNIQUE_TRACKS = 40000;
+const TOTAL_UNIQUE_TRACKS = 20000;
 const REPETITIONS_PER_TRACK = 1;
 const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
 
@@ -23,7 +23,8 @@ async function runSimulation(simulationIndex) {
     // Generate random parameters for the simulation
     const mode = 'voronoi';
     const seed = simulationIndex;
-    const trackSize = (simulationIndex % 8) + 1;
+    // tracksize between 4 and 10
+    const trackSize = simulationIndex % 7 + 4; // This will cycle through values from 4 to 10
 
     // Run the simulation
     const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false);

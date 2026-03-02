@@ -39,6 +39,9 @@ def generate_track(seed, perlin_params, track_size=None):
 
 def build_figure(data_list, cols=6):
     n = len(data_list)
+    # Dynamically adjust columns to minimize empty space
+    if n < cols:
+        cols = n
     rows = max(1, math.ceil(n / cols))
     
     # We remove standard subplot_titles so we can add them as clickable plot traces
