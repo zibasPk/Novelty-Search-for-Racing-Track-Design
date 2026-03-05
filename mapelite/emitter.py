@@ -6,7 +6,7 @@ import random
 
 from ribs.emitters import EmitterBase
 
-from config import BASE_URL, BATCH_SIZE, RANDOM_POPULATION_ITERS, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE
+from config import BASE_URL, BATCH_SIZE, RANDOM_POPULATION_ITERS, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE, RngMode
 import utils
 
 class CustomEmitter(EmitterBase):
@@ -68,7 +68,9 @@ class CustomEmitter(EmitterBase):
             if not response.ok:
                     raise Exception(f"API error {response.status_code}: {response.text}")
                 
-            return response.json()
+            sol = response.json()
+            sol["rngMode"] = rngMode  # persist rngMode in the genome
+            return sol
         except Exception as e:
             print(f"Error generating solution for iteration {self.iteration}: {e}")
             return None 
@@ -105,6 +107,7 @@ class CustomEmitter(EmitterBase):
                 # Assign a unique, iteration-based ID for tracking
                 frac = utils.get_fractional_part(sol["id"])
                 mutated["id"] = seed
+                mutated["rngMode"] = sol.get("rngMode", "uniform")  # inherit rngMode from parent
                 
                 mutated_arr = utils.solution_to_array(mutated)
                 
@@ -169,7 +172,8 @@ class CustomEmitter(EmitterBase):
                     "mode": GENERATION_MODE,
                     "trackSize": len(offspring.get("sel", [])),
                     "dataSet": offspring.get("ds", []),
-                    "selectedCells": offspring.get("sel", [])
+                    "selectedCells": offspring.get("sel", []),
+                    "rngMode": sol1.get("rngMode", "uniform")  # inherit rngMode from parent1
                 }
                 
                 child_arr = utils.solution_to_array(child_sol)

@@ -88,6 +88,7 @@ class EvaluationBuffer:
             "dataSet": sol_dict.get("dataSet", []),
             "selectedCells": sol_dict.get("selectedCells", []),
             "mode": sol_dict.get("mode", ""),
+            "rngMode": sol_dict.get("rngMode", "uniform"),
             "embedding": np.asarray(embedding).tolist(),
             "score": float(score),
             "valid": ok,
@@ -431,6 +432,7 @@ def export_elites(
         elite = {
             "id":            sol_dict["id"],
             "mode":          sol_dict["mode"],
+            "rngMode":       sol_dict.get("rngMode", "uniform"),
             "dataSet":       sol_dict["dataSet"],
             "selectedCells": sol_dict["selectedCells"],
             "trackSize":     len(sol_dict["selectedCells"]),

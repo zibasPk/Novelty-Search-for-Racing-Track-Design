@@ -7,7 +7,7 @@ import joblib
 import os
 
 from config import (
-    BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE
+    BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE, RngMode
 )
 
 # --- Embedding Model Loading ---
@@ -42,8 +42,12 @@ def solution_to_array(sol):
             idx = POINTS_COUNT * 2 + i * 2
             arr[idx] = c.get("x", 0)
             arr[idx + 1] = c.get("y", 0)
-            
-    # 3. Solution ID (last element)
+
+    # 3. rngMode (second-to-last element): 0 = uniform, 1 = perlin
+    rng_mode_str = sol.get("rngMode", "uniform")
+    arr[-2] = float(RngMode[rng_mode_str.upper()])
+
+    # 4. Solution ID (last element)
     arr[-1] = sol.get("id", 0)
     return arr
 
@@ -56,16 +60,22 @@ def array_to_solution(arr):
         
     sel = []
     # 2. Selected Cells (only include non-zero/valid cells)
-    for i in range(POINTS_COUNT * 2, SOLUTION_DIM - 1, 2):
+    sel_end = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2
+    for i in range(POINTS_COUNT * 2, sel_end, 2):
         x_val = arr[i]
         y_val = arr[i+1]
         # Assuming (0, 0) is a sentinel value for unused slots
         if x_val != 0 or y_val != 0:
             sel.append({"x": float(x_val), "y": float(y_val)})
-            
+
+    # 3. rngMode (second-to-last element): 0 = uniform, 1 = perlin
+    rng_val = int(arr[-2])
+    rng_mode = RngMode(rng_val).name.lower()  # "uniform" or "perlin"
+
     return {
         "id": float(arr[-1]),
         "mode": GENERATION_MODE,
+        "rngMode": rng_mode,
         "dataSet": ds,
         "selectedCells": sel
     }

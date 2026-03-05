@@ -1,6 +1,13 @@
 # config.py
 
 import os
+from enum import IntEnum
+
+
+class RngMode(IntEnum):
+    UNIFORM = 0
+    PERLIN = 1
+
 
 # --- General Setup ---
 BASE_URL = 'http://localhost:4242'
@@ -9,9 +16,9 @@ GENERATION_MODE = 'voronoi'  # 'convexHull' or 'voronoi'
 # --- Track/Solution Parameters ---
 POINTS_COUNT = 100
 MAX_SELECTED_CELLS = 10  # relevant only for voronoi
-# Calculated Dimension: POINTS_COUNT * 2 (x/y) + MAX_SELECTED_CELLS * 2 (x/y) + 1 (ID)
-# All cells coordinates + selected cell coordinates + solution ID
-SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 
+# Calculated Dimension: POINTS_COUNT * 2 (x/y) + MAX_SELECTED_CELLS * 2 (x/y) + 1 (rngMode) + 1 (ID)
+# All cells coordinates + selected cell coordinates + rngMode + solution ID
+SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 + 1
 TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
 
 # --- QD Parameters ---
