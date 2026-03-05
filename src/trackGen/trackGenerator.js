@@ -14,7 +14,7 @@ async function importJsonUtils() {
 	}
 }
 
-export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode = 'uniform' , perlin_parameters = null } = {}) {
+export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode, perlin_parameters = null } = {}) {
 	let trackGenerator;
 
 	if (saveJSON) await importJsonUtils();
@@ -50,7 +50,7 @@ export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JS
 	let splineVector = utils.resamplePoints(splineTrack);
 	if (saveJSON) {
 		if (mode === 'voronoi')
-			await savePointsToJson(seed, trackGenerator.dataSet, mode, trackGenerator.selectedCells.map(cell => cell.site), splineVector);
+			await savePointsToJson(seed, trackGenerator.dataSet, mode,rngMode, trackGenerator.selectedCells.map(cell => cell.site), splineVector);
 		else
 			await savePointsToJson(seed, trackGenerator.dataSet, mode, [], splineVector);
 	}

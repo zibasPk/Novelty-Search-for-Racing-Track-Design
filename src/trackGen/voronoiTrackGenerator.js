@@ -1,11 +1,11 @@
 import Voronoi from '../lib/rhill-voronoi-core.js';
-import { NUMBER_OF_VORONOI_SITES, DEFAULT_PERLIN_PARAMETERS} from "../utils/constants.js"
+import { NUMBER_OF_VORONOI_SITES, DEFAULT_PERLIN_PARAMETERS, RngMode } from "../utils/constants.js"
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
 import { createNoise2D } from 'simplex-noise';
 import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode = 'uniform', perlin_parameters = null) {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode, perlin_parameters = null) {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
     this.noise = createNoise2D(this.randomGen);
@@ -24,9 +24,9 @@ export class VoronoiTrackGenerator {
 
   generatePoints(genType) {
     switch (genType) {
-      case 'perlin':
+      case RngMode.PERLIN:
         return this.perlinPointGen();
-      case 'uniform':
+      case RngMode.UNIFORM:
         return this.uniformPointGen();
       default:
         log.warn`Unknown genType "${genType}", defaulting to uniform point generation.`;

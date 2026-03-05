@@ -2,14 +2,12 @@
 //with fixed params
 
 import { simulate } from './simulateTrack.js';
-import { JSON_DEBUG, SIMULATION_TIMEOUT, LOG_DIR} from '../utils/constants.js';
+import { JSON_DEBUG, SIMULATION_TIMEOUT, LOG_DIR, RngMode } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
 import { initLogger } from '../utils/logger.js';
 
-const STARTING_SEED = 10000;
-// const STARTING_SEED = 0;
-const TOTAL_UNIQUE_TRACKS = 20000;
-const REPETITIONS_PER_TRACK = 1;
+const STARTING_SEED = 0;
+const ENDING_SEED = 20000;
 const CONCURRENCY_LIMIT = 20; // Number of parallel simulations
 
 
@@ -25,9 +23,9 @@ async function runSimulation(simulationIndex) {
     const seed = simulationIndex;
     // tracksize between 4 and 10
     const trackSize = simulationIndex % 7 + 4; // This will cycle through values from 4 to 10
-
+    let rngMode = seed % 2 === 0 ? RngMode.UNIFORM : RngMode.PERLIN; // Alternate between 'uniform' and 'perlin' RNG modes
     // Run the simulation
-    const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false);
+    const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false, rngMode);
 
     log.trace(`fitness: ${JSON.stringify(fitness)}`);
     let endTime = Date.now();
@@ -44,8 +42,8 @@ async function runSimulation(simulationIndex) {
 async function runSimulations() {
   const startTime = Date.now();
   const simulationPromises = [];
-  for (let i = STARTING_SEED; i < REPETITIONS_PER_TRACK * TOTAL_UNIQUE_TRACKS + STARTING_SEED; i++) {
-    simulationPromises.push(runSimulation(i % TOTAL_UNIQUE_TRACKS));
+  for (let i = STARTING_SEED; i < ENDING_SEED; i++) {
+    simulationPromises.push(runSimulation(i));
     if (simulationPromises.length >= CONCURRENCY_LIMIT) {
       await Promise.all(simulationPromises);
       simulationPromises.length = 0;

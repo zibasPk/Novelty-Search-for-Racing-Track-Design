@@ -147,7 +147,7 @@ app.post('/reconstruct', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/evaluate', async (req, res) => {
   try {
-    const { id, mode, dataSet, selectedCells } = req.body;
+    const { id, mode, dataSet, selectedCells, rngMode } = req.body;
 
     const sel = safeArray(selectedCells);
     const simulationResult = await simulate(
@@ -156,7 +156,9 @@ app.post('/evaluate', async (req, res) => {
       dataSet,
       sel,
       id,
-      JSON_DEBUG
+      JSON_DEBUG,
+      false,
+      rngMode
     );
 
     res.json({

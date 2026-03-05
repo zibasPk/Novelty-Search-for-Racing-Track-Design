@@ -33,6 +33,11 @@ export const COLORS = {
   ]
 };
 
+export const RngMode = {
+  UNIFORM: 0,
+  PERLIN: 1,
+};
+
 export const DEFAULT_PERLIN_PARAMETERS = {
   NOISE_FREQUENCY: 3, // Lower = Larger, wider shapes, 3 looks best.
   densityThreshold: 0.3, // Adjusts overall density (0 to 1)

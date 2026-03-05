@@ -40,7 +40,8 @@ export async function simulate(
   selected = [],
   seed = null,
   saveJson = false,
-  plot = false
+  plot = false,
+  rngMode,
 ) {
   if (isNaN(trackSize)) {
     if (mode === 'voronoi') {
@@ -55,7 +56,7 @@ export async function simulate(
   // generate track json
   const trackResults = await generateTrack({
     mode, bbox: BBOX, seed, trackSize,
-    saveJSON: saveJson, dataSet, selected
+    saveJSON: saveJson, dataSet, selected, rngMode
   });
   
 
@@ -78,7 +79,7 @@ export async function simulate(
     log.debug(`Generating and moving track files to Docker container for ${seed}`);
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
 
-    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e `;
+    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e -tr`;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
@@ -141,6 +142,7 @@ export async function simulate(
         seed,
         mode,
         trackResults.generator.trackSize,
+        rngMode,
         fitness
       );
     }

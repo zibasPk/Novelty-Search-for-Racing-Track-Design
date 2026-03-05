@@ -1,5 +1,6 @@
 import {
   BBOX,
+  RngMode,
 } from '../constants.js';
 import { generateTrack } from '../../trackGen/trackGenerator.js';
 import { TorcsXMLGenerator } from '../../trackGen/torcsXMLGenerator.js';
@@ -46,7 +47,7 @@ import fs from 'fs/promises';
 
 // load from data/voronoi/json the file named 123.json and generate the xml file
 const jsonDir = 'data/voronoi/fitted/';
-const filename = '2.130719712495899.json';
+const filename = '12850.json';
 const filePath = jsonDir + filename;
 
 const data = await fs.readFile(filePath, 'utf-8');
@@ -61,14 +62,12 @@ async function genJsonAndXml(trackData) {
   try {
     // generate track json
     const trackResults = await generateTrack({
-      mode: trackData.mode, bbox: BBOX, seed: trackData.id, trackSize: trackData.selectedCells.length,
-      saveJSON: false, dataSet: trackData.dataSet, selected: trackData.selectedCells
+      mode: trackData.mode, bbox: BBOX, seed: trackData.id, trackSize: trackData.trackSize,
+      saveJSON: false, dataSet: trackData.dataSet, selected: trackData.selectedCells, rngMode: RngMode.PERLIN
     });
-
     const seed = trackData.id;
     // translate to XML for TORCS
     const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
-    const trackXml = xmlGenerator.generateXML(0, true);
 
   } catch (e) {
     log.error(`Error generating track from file : ${e.message}`);

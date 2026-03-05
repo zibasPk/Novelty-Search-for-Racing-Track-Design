@@ -2,7 +2,8 @@ import fs from 'fs';
 import { generateTrack } from './trackGenerator.js';
 import log from "loglevel";
 import {
-  BBOX
+  BBOX,
+  RngMode
 } from '../utils/constants.js';
 
 const STARTING_SEED = 0;
@@ -15,10 +16,11 @@ async function runGen(genIndex) {
     const mode = 'voronoi';
     const seed = genIndex;
     const trackSize = (genIndex % 8) + 1;
+    const rngMode = seed % 2 === 0 ? RngMode.UNIFORM : RngMode.PERLIN;
     
     // Run the simulation
     const { track, generator, splineVector } =
-          await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false });
+          await generateTrack({ mode, bbox: BBOX, seed, trackSize, rngMode, saveJSON: false });
     
     // Convert track from [{x, y}] to [[x, y]]
     const convertedTrack = track.map(point => [point.x, point.y]);
