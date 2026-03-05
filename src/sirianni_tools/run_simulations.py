@@ -108,7 +108,7 @@ def run_race_simulation(folder_name, num_laps, iteration=0, change_order=True):
     subprocess.check_call(cmd, shell=True)
     print("Race simulation completed.")
     
-def run_analysis(no_plots=True, json_output=True, embedding=False):
+def run_analysis(no_plots=True, json_output=True, embedding=False, trace=False):
     """
     Run analysis script on the logs, returning output as string.
     By default uses JSON output from analyze_simulations.py.
@@ -128,6 +128,10 @@ def run_analysis(no_plots=True, json_output=True, embedding=False):
         
     if embedding:
         cmd.append("--track-embedding")
+        
+    if trace:
+        cmd.append("--trace")
+
     # We assume logs are in utils.torcsLogPath, e.g. /root/.torcs/logs
     cmd.append(utils.torcsLogPath)
 
@@ -217,6 +221,7 @@ def main():
     parser.add_argument("--dont-change-order", action="store_true",
                         help="change the order of bots for each iteration.")
     parser.add_argument("-e","--track-embedding", action="store_true", help="generate track embedding data. This will run a separate simulation to get the embedding data, which will be included in the final JSON output.")
+    parser.add_argument("-tr", "--trace", action="store_true", help="return metric trace data for benchmark lap")
     args = parser.parse_args()
 
     # The usual torcs raceman directory from utils:
@@ -231,14 +236,15 @@ def main():
             sys.exit(1)
     
     # Only run benchmark if we need to determine num_laps or its specified to get track embeddings
-    should_run_benchmark = args.target_duration is not None or args.track_embedding  
+    should_run_benchmark = args.target_duration is not None or args.track_embedding or args.trace
+    
     if should_run_benchmark:
         try:
             run_benchmark_sim(folder_name)
         except subprocess.CalledProcessError as e:
             print(f"Error running benchmark simulation: {e}")
             sys.exit(1)
-        analysis_output = run_analysis(no_plots=True, json_output=True, embedding=args.track_embedding)
+        analysis_output = run_analysis(no_plots=True, json_output=True, embedding=args.track_embedding, trace=args.trace)
         parsed = parse_analysis_json(analysis_output)
         
         if args.target_duration is not None:
@@ -249,7 +255,14 @@ def main():
             print(f"Number of laps to simulate was calculated: {args.num_laps}")
         
         if args.track_embedding:
-            embedding_data = parsed.get("embedding_data", None) 
+            embedding_data = parsed.get("embedding_data", None)
+        
+        if args.trace:
+            trace_data = {}
+            trace_data["speed_trace"] = parsed.get("speed_trace", None)
+            trace_data["accel_trace"] = parsed.get("accel_trace", None)
+            trace_data["steer_trace"] = parsed.get("steer_trace", None)
+            trace_data["brake_trace"] = parsed.get("brake_trace", None)
             
                      
     # 2) run multiple races and accumulate the results
@@ -285,6 +298,8 @@ def main():
         final_result = avg_res
         if args.track_embedding:
             final_result["embedding_data"] = embedding_data
+        if args.trace:
+            final_result.update(trace_data)
         print_final_results(final_result) 
     else:
         print("Warning: No valid analysis results to average.")

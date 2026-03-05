@@ -38,6 +38,8 @@ parser.add_argument("--no-plots", action="store_true",
                     help="skip plot generation")
 parser.add_argument("-e", "--track-embedding", action="store_true",
                     help="generate and return data for track embedding")
+parser.add_argument("--trace", action="store_true",
+                    help="include speed/accel/steer/brake traces in the output")
 args = parser.parse_args()
 
 for path in args.paths:
@@ -207,6 +209,8 @@ for path in args.paths:
 
         if args.track_embedding:
             raw_metrics['embedding_data'] = embedding_data
+        
+        if args.trace:    
             speed_dist_trace = traces.get_trace(
                 folder_name, track_name, utils.dynamicsLogColumns.speed.value)
             accel_dist_trace = traces.get_trace(
