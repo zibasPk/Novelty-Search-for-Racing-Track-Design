@@ -1,8 +1,8 @@
 import json
 import numpy as np
 
-INPUT_FILE = 'tracks.json'
-OUTPUT_FILE = 'tracks.npz'
+INPUT_FILE = 'tracks_mixedRng.json'
+OUTPUT_FILE = 'tracks_mixedRng.npz'
 
 def json_to_npz(input_file, output_file):
     print(f"Loading {input_file}...")

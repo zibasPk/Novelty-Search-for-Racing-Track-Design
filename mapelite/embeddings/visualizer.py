@@ -14,8 +14,8 @@ from sklearn.preprocessing import StandardScaler
 # ==========================================
 BASE_DIR = Path(__file__).parent
 DATASETS_FOLDER = BASE_DIR / "datasets/embeddings/good"
-TRACKS_FILE = BASE_DIR / "datasets/tracks.npz"
-FITNESS_FILE = BASE_DIR / "datasets/fitness_dict.npz"
+TRACKS_FILE = BASE_DIR / "datasets/tracks_mixedRng.npz"
+FITNESS_FILE = BASE_DIR / "datasets/fitness_dict_mixedRng.npz"
 
 DEFAULT_MAX_POINTS = 9000
 
@@ -280,7 +280,7 @@ def update_latent(dataset, max_samples, search_id, color_col):
             y='Latent_Y', 
             color=color_source, 
             hover_data=['ID', color_col],
-            color_continuous_scale='RdBu',
+            color_continuous_scale='RdBu_r',
             template='plotly_dark', 
             title=title
         )

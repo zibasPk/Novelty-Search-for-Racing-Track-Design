@@ -82,9 +82,9 @@ def create_dataset(source_folder, output_file, max_files=None):
 if __name__ == "__main__":
     SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/metrics/dataset10k.npz'
+    OUTPUT_NAME = 'data/datasets/metrics/dataset20k_mixedRng.npz'
 
     # Ensure output directory exists
     Path('data/datasets/metrics').mkdir(parents=True, exist_ok=True)
 
-    create_dataset(SOURCE_DIR, OUTPUT_NAME, 10000)
+    create_dataset(SOURCE_DIR, OUTPUT_NAME, 20000)
