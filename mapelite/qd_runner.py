@@ -7,6 +7,7 @@ import glob
 import pickle
 import datetime
 import json
+import umap
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,6 +20,7 @@ from mapelite.config import (
     BUFFER_DIR,
     CHECKPOINT_EVERY,
     INVALID_SCORE,
+    HEATMAP_DIR
 )
 from utils import array_to_solution
 
@@ -187,6 +189,7 @@ def run_qd_loop(
     global_best_score,
     global_best_id,
     buffer_path=None,
+    seed=None,
 ):
     """
     Generic ask → evaluate → tell loop used by every QD variant.
@@ -212,7 +215,7 @@ def run_qd_loop(
         gathered = [f.result() for f in futs]
 
         obj_list, clean_solutions = [], []
-        for (sol_id, ok, msg, score, desc), sol_dict in zip(gathered, sol_dicts):
+        for (sol_id, ok, msg, score, measures), sol_dict in zip(gathered, sol_dicts):
 
             if not ok:
                 print(f"Warning: clamping bad score for ID={sol_id} ({msg})")
@@ -224,18 +227,19 @@ def run_qd_loop(
                     global_best_id = sol_id
 
             # Record every evaluation in the buffer
-            evaluation_buffer.record(sol_id, sol_dict, desc, score, ok)
+            evaluation_buffer.record(sol_id, sol_dict, measures, score, ok)
 
-            clean_solutions.append((score, desc))
+            clean_solutions.append((score, measures))
             obj_list.append(score)
 
-        obj_batch, meas_batch = zip(*clean_solutions)
+        obj_batch, measures_batch = zip(*clean_solutions)
 
         # ── Track new / substituted elites via temporary monkey-patch ──
         new_elites_count = 0
         sub_elites_count = 0
         original_add = archive.add
 
+        # We wrap the archive's add() method to count how many new elites are inserted and how many existing elites are substituted in each batch.
         def tracked_add(*args, **kwargs):
             nonlocal new_elites_count, sub_elites_count
             res = original_add(*args, **kwargs)
@@ -254,17 +258,18 @@ def run_qd_loop(
                 sub_elites_count += int(np.sum(arr == AddStatus.IMPROVE_EXISTING))
 
             return res
-
+        
         archive.add = tracked_add
+        
         try:
-            scheduler.tell(list(obj_batch), list(meas_batch))
+            scheduler.tell(list(obj_batch), list(measures_batch))
         finally:
             if "add" in archive.__dict__:
                 del archive.__dict__["add"]
 
         # ── Logging ──
         batch_best = max(obj_list) if obj_list else INVALID_SCORE
-        print(f"Iteration {i+1} ended. Best in batch = {batch_best:.2f}")
+        print(f"Iteration {i} ended. Best in batch = {batch_best:.2f}")
         print(f"Global best so far: {global_best_score:.2f} (ID={global_best_id})")
         print(f"Archive Updates: {new_elites_count} new elites inserted, "
               f"{sub_elites_count} elites substituted.")
@@ -288,11 +293,11 @@ def run_qd_loop(
 
         # ── Checkpoint ──
         if (i + 1) % CHECKPOINT_EVERY == 0:
-            ckpt_name = f"{checkpoint_dir}checkpoint_{i+1:04d}.pkl"
+            ckpt_name = f"{checkpoint_dir}checkpoint_{i:04d}.pkl"
             with open(ckpt_name, "wb") as f:
                 pickle.dump({
                     "scheduler": scheduler,
-                    "iteration": i + 1,
+                    "iteration": i,
                     "global_best_score": global_best_score,
                     "global_best_id": global_best_id,
                 }, f)
@@ -304,7 +309,7 @@ def run_qd_loop(
 
             # Persist the evaluation buffer alongside each checkpoint
             evaluation_buffer.save()
-
+        plot_archive_heatmap(archive, i, seed=seed)
     # Final save to ensure nothing is lost
     evaluation_buffer.save()
 
@@ -313,6 +318,26 @@ def run_qd_loop(
 
 # ── Visualization ───────────────────────────────────────────────────────────
 
+def plot_archive_heatmap(archive, iteration, seed=None):
+    """2D umap compression of the archive's behavioural space, colored by fitness."""
+    archive_data = archive.data()
+    solutions = archive_data["solution"]
+    solution_dicts = [array_to_solution(sol) for sol in solutions]
+    embeddings = archive_data["measures"]
+    fitnesses = archive_data["objective"]
+    
+    reducer = umap.UMAP(n_components=2, random_state=seed)
+    umap_compression = reducer.fit_transform(embeddings)
+    
+    plt.scatter(umap_compression[:, 0], umap_compression[:, 1], c=fitnesses, cmap="viridis", s=10)
+    plt.colorbar(label="Fitness")
+    plt.tight_layout()
+    plt.savefig(f"{HEATMAP_DIR}archive_heatmap_iter_{iteration}.png")
+    
+    # Save data for interactive visualization
+    np.savez_compressed(f"{HEATMAP_DIR}archive_data_iter_{iteration}.npz",
+                        umap=umap_compression, fitness=fitnesses, solutions=solution_dicts)
+    
 def plot_stats(stats, title="QD Run Statistics"):
     """5-row run-statistics plot (archive growth, fitness, new elites, substituted elites, cumulative)."""
 

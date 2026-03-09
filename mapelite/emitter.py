@@ -19,6 +19,9 @@ class CustomEmitter(EmitterBase):
         self.batch_size = batch_size
         self.iteration = 0
         self.seed = seed
+        # Use a dedicated RNG instance seeded deterministically so the emitter's
+        # randomness is self-contained and not affected by global random state.
+        self._rng = random.Random(seed)
 
     def ask(self):
         """Generates a batch of solutions for the scheduler to evaluate."""
@@ -43,7 +46,7 @@ class CustomEmitter(EmitterBase):
             return np.array(out)
         else:
             # Main QD loop: 50/50 mutation or crossover
-            if random.random() < 0.5:
+            if self._rng.random() < 0.5:
                 # Mutate (returns BATCH_SIZE solutions)
                 return self.mutate_solutions()
             else:
@@ -58,9 +61,9 @@ class CustomEmitter(EmitterBase):
             response = requests.post(
                 f"{BASE_URL}/generate",
                 json={
-                    "id": self.iteration - 1 + random.random(),
+                    "id": self.iteration - 1 + self._rng.random(),
                     "mode": GENERATION_MODE,
-                    "trackSize": random.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1]),
+                    "trackSize": self._rng.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1]),
                     "rngMode": rngMode
                 },
                 timeout=60
@@ -87,7 +90,7 @@ class CustomEmitter(EmitterBase):
         for i in range(self.batch_size):
             arr = parents["solution"][i]
             sol = utils.array_to_solution(arr)
-            seed = self.iteration - 1 + random.random()  # Unique seed for mutation based on iteration and randomness
+            seed = self.iteration - 1 + self._rng.random()  # Unique seed for mutation based on iteration and randomness
             
             try:
                 response = requests.post(
@@ -146,7 +149,7 @@ class CustomEmitter(EmitterBase):
                         break
                     
                 # Assign a unique, iteration-based ID for tracking
-                seed = self.iteration - 1 + random.random()
+                seed = self.iteration - 1 + self._rng.random()
                    
                 # 2. Call the external crossover API
                 response = requests.post(
