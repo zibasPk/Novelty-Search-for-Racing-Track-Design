@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors'; // <--- 1. IMPORT CORS HERE
+import cors from 'cors';
 import { generateTrack } from '../trackGen/trackGenerator.js';
 import { crossover, crossover2 } from '../genetic/crossoverVoronoi.js';
 import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull.js';

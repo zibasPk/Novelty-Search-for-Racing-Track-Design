@@ -55,8 +55,8 @@ class CustomEmitter(EmitterBase):
     
     def generate_solution(self):
         """Generates a new track solution by calling the external API."""
-        rngMode = "uniform" if self.iteration % 2 == 0 else "perlin"
-            
+        rngMode = RngMode.UNIFORM if self.iteration % 2 == 0 else RngMode.PERLIN
+
         try:
             response = requests.post(
                 f"{BASE_URL}/generate",
@@ -110,7 +110,7 @@ class CustomEmitter(EmitterBase):
                 # Assign a unique, iteration-based ID for tracking
                 frac = utils.get_fractional_part(sol["id"])
                 mutated["id"] = seed
-                mutated["rngMode"] = sol.get("rngMode", "uniform")  # inherit rngMode from parent
+                mutated["rngMode"] = sol.get("rngMode", RngMode.UNIFORM)  # inherit rngMode from parent
                 
                 mutated_arr = utils.solution_to_array(mutated)
                 
@@ -176,7 +176,7 @@ class CustomEmitter(EmitterBase):
                     "trackSize": len(offspring.get("sel", [])),
                     "dataSet": offspring.get("ds", []),
                     "selectedCells": offspring.get("sel", []),
-                    "rngMode": sol1.get("rngMode", "uniform")  # inherit rngMode from parent1
+                    "rngMode": sol1.get("rngMode", RngMode.UNIFORM)  # inherit rngMode from parent1
                 }
                 
                 child_arr = utils.solution_to_array(child_sol)

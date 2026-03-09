@@ -8,14 +8,17 @@ import pickle
 import datetime
 import json
 import umap
+import requests
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from ribs.archives import AddStatus
 from dask.distributed import Client, LocalCluster
 
 from mapelite.evaluator import EvaluatorMetrics
 from mapelite.config import (
+    BASE_URL,
     BATCH_SIZE,
     BUFFER_DIR,
     CHECKPOINT_EVERY,
@@ -50,7 +53,8 @@ class EvaluationBuffer:
             with open(self.buffer_path, "r") as f:
                 data = json.load(f)
             self.entries = data.get("tracks", [])
-            print(f"[Buffer] Resumed {len(self.entries)} entries from {self.buffer_path}")
+            print(
+                f"[Buffer] Resumed {len(self.entries)} entries from {self.buffer_path}")
         else:
             print(f"[Buffer] No existing buffer found — starting empty.")
 
@@ -63,7 +67,8 @@ class EvaluationBuffer:
         }
         with open(self.buffer_path, "w") as f:
             json.dump(payload, f)
-        print(f"[Buffer] Saved {len(self.entries)} entries to {self.buffer_path}")
+        print(
+            f"[Buffer] Saved {len(self.entries)} entries to {self.buffer_path}")
 
     # -- recording ------------------------------------------------------------
 
@@ -106,11 +111,13 @@ class EvaluationBuffer:
 def setup_dask(batch_size=BATCH_SIZE):
     """Create a Dask LocalCluster and scatter the evaluator to all workers."""
     print("Setting up Dask LocalCluster...")
-    cluster = LocalCluster(processes=True, n_workers=batch_size, threads_per_worker=1)
+    cluster = LocalCluster(
+        processes=True, n_workers=batch_size, threads_per_worker=1)
     client = Client(cluster)
     print(f"Dask Dashboard link: {client.dashboard_link}")
 
-    evaluator = EvaluatorMetrics.load_pretrained("mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth")
+    evaluator = EvaluatorMetrics.load_pretrained(
+        "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth")
     evaluator_future = client.scatter(evaluator, broadcast=True)
     print(f"Evaluator scattered to {batch_size} Dask workers")
 
@@ -119,7 +126,7 @@ def setup_dask(batch_size=BATCH_SIZE):
 
 # ── Checkpoint / Resume ─────────────────────────────────────────────────────
 
-def resume_from_checkpoint(checkpoint_dir, stats_dir, stats_filename):
+def resume_from_checkpoint(checkpoint_dir, stats_path):
     """
     Try to restore scheduler & stats from the latest checkpoint.
 
@@ -131,7 +138,7 @@ def resume_from_checkpoint(checkpoint_dir, stats_dir, stats_filename):
           must build them).
     """
     checkpoints = sorted(glob.glob(f"{checkpoint_dir}checkpoint_*.pkl"))
-    start_iter = 0
+    start_iter = 1
     global_best_score = INVALID_SCORE
     global_best_id = None
     scheduler = None
@@ -142,19 +149,19 @@ def resume_from_checkpoint(checkpoint_dir, stats_dir, stats_filename):
         latest_ckpt = checkpoints[-1]
         with open(latest_ckpt, "rb") as f:
             state = pickle.load(f)
-        scheduler         = state["scheduler"]
-        archive           = scheduler.archive
-        start_iter        = state["iteration"]
+        scheduler = state["scheduler"]
+        archive = scheduler.archive
+        start_iter = state["iteration"] + 1
         global_best_score = state["global_best_score"]
-        global_best_id    = state["global_best_id"]
-        print(f"[Resume] Loaded {latest_ckpt}, resuming from iteration {start_iter+1}")
+        global_best_id = state["global_best_id"]
+        print(
+            f"[Resume] Loaded {latest_ckpt}, resuming from iteration {start_iter}")
     else:
         print("[Resume] No checkpoint found — starting fresh.")
 
     # Resume stats
-    stats_file = os.path.join(stats_dir, stats_filename)
-    if os.path.exists(stats_file):
-        with open(stats_file, "rb") as f:
+    if os.path.exists(stats_path):
+        with open(stats_path, "rb") as f:
             stats = pickle.load(f)
     print(f"[Resume] Resumed stats with {len(stats)} entries")
 
@@ -182,12 +189,13 @@ def run_qd_loop(
     evaluator_future,
     total_iters,
     start_iter,
-    checkpoint_dir,
-    stats_dir,
-    stats_filename,
     stats,
     global_best_score,
     global_best_id,
+    checkpoint_dir,
+    heatmap_dir,
+    gridplot_dir,
+    stats_path,
     buffer_path=None,
     seed=None,
 ):
@@ -202,6 +210,18 @@ def run_qd_loop(
     if buffer_path is None:
         buffer_path = os.path.join(BUFFER_DIR, "buffer.json")
     evaluation_buffer = EvaluationBuffer(buffer_path)
+
+    # Persistent cache so each unique solution is only fetched once from /reconstruct
+    _grid_track_cache: dict = {}
+
+    # Rebuild per-bucket state from previously loaded stats (for resume)
+    bucket_order = []
+    sub_counts = {}
+    for s in stats:
+        for idx in s.get("new_bucket_indices", []):
+            bucket_order.append(idx)
+        for idx in s.get("substituted_bucket_indices", []):
+            sub_counts[idx] = sub_counts.get(idx, 0) + 1
 
     for i in range(start_iter, total_iters):
 
@@ -234,6 +254,13 @@ def run_qd_loop(
 
         obj_batch, measures_batch = zip(*clean_solutions)
 
+        # ── Pre-tell snapshot for per-bucket tracking ──
+        pre_data = archive.data()
+        pre_obj_by_idx = {}
+        if len(pre_data["objective"]) > 0:
+            for _idx, _obj in zip(pre_data["index"], pre_data["objective"]):
+                pre_obj_by_idx[int(_idx)] = float(_obj)
+
         # ── Track new / substituted elites via temporary monkey-patch ──
         new_elites_count = 0
         sub_elites_count = 0
@@ -255,12 +282,13 @@ def run_qd_loop(
             if statuses is not None:
                 arr = np.asarray(statuses)
                 new_elites_count += int(np.sum(arr == AddStatus.NEW))
-                sub_elites_count += int(np.sum(arr == AddStatus.IMPROVE_EXISTING))
+                sub_elites_count += int(np.sum(arr ==
+                                        AddStatus.IMPROVE_EXISTING))
 
             return res
-        
+
         archive.add = tracked_add
-        
+
         try:
             scheduler.tell(list(obj_batch), list(measures_batch))
         finally:
@@ -270,7 +298,8 @@ def run_qd_loop(
         # ── Logging ──
         batch_best = max(obj_list) if obj_list else INVALID_SCORE
         print(f"Iteration {i} ended. Best in batch = {batch_best:.2f}")
-        print(f"Global best so far: {global_best_score:.2f} (ID={global_best_id})")
+        print(
+            f"Global best so far: {global_best_score:.2f} (ID={global_best_id})")
         print(f"Archive Updates: {new_elites_count} new elites inserted, "
               f"{sub_elites_count} elites substituted.")
 
@@ -280,7 +309,21 @@ def run_qd_loop(
         mean_val = np.mean(arch_obj[valid]) if np.any(valid) else 0.0
         best_val = np.max(arch_obj[valid]) if np.any(valid) else 0.0
         elites = archive.stats.num_elites
-        print(f"Archive size={elites}, mean={mean_val:.2f}, best={best_val:.2f}")
+        print(
+            f"Archive size={elites}, mean={mean_val:.2f}, best={best_val:.2f}")
+
+        # ── Per-bucket diff (reuse data_archive as post-tell snapshot) ──
+        iter_new_indices = []
+        iter_sub_indices = []
+        if len(data_archive["objective"]) > 0:
+            for _idx, _obj in zip(data_archive["index"], data_archive["objective"]):
+                idx_int = int(_idx)
+                if idx_int not in pre_obj_by_idx:
+                    iter_new_indices.append(idx_int)
+                    bucket_order.append(idx_int)
+                elif float(_obj) != pre_obj_by_idx[idx_int]:
+                    iter_sub_indices.append(idx_int)
+                    sub_counts[idx_int] = sub_counts.get(idx_int, 0) + 1
 
         stats.append({
             "iteration": i,
@@ -289,10 +332,12 @@ def run_qd_loop(
             "global_best_score": global_best_score,
             "new_elites": new_elites_count,
             "substituted_elites": sub_elites_count,
+            "new_bucket_indices": iter_new_indices,
+            "substituted_bucket_indices": iter_sub_indices,
         })
 
         # ── Checkpoint ──
-        if (i + 1) % CHECKPOINT_EVERY == 0:
+        if i % CHECKPOINT_EVERY == 0:
             ckpt_name = f"{checkpoint_dir}checkpoint_{i:04d}.pkl"
             with open(ckpt_name, "wb") as f:
                 pickle.dump({
@@ -303,13 +348,14 @@ def run_qd_loop(
                 }, f)
             print(f"[Checkpoint] Saved {ckpt_name}")
 
-            stats_path = os.path.join(stats_dir, stats_filename)
             with open(stats_path, "wb") as f:
                 pickle.dump(stats, f)
 
             # Persist the evaluation buffer alongside each checkpoint
             evaluation_buffer.save()
-        plot_archive_heatmap(archive, i, seed=seed)
+        plot_archive_heatmap(archive, i, heatmap_dir, seed=seed)
+        plot_archive_grid(stats, archive=archive, save_dir=gridplot_dir,
+                          track_cache=_grid_track_cache)
     # Final save to ensure nothing is lost
     evaluation_buffer.save()
 
@@ -318,35 +364,221 @@ def run_qd_loop(
 
 # ── Visualization ───────────────────────────────────────────────────────────
 
-def plot_archive_heatmap(archive, iteration, seed=None):
+def _get_track_outline(sol_dict, track_cache):
+    """Call /reconstruct for *sol_dict* and return ``(xs, ys)`` float arrays.
+
+    Results are stored in *track_cache* keyed by solution ID so the same
+    solution is never fetched more than once across animation frames.
+    Returns ``None`` on any error or if the server is unavailable.
+    """
+    sol_id = sol_dict.get("id")
+    if track_cache is not None and sol_id in track_cache:
+        return track_cache[sol_id]
+
+    result = None
+    try:
+        resp = requests.post(
+            f"{BASE_URL}/reconstruct",
+            json={
+                "mode": sol_dict["mode"],
+                "dataSet": sol_dict["dataSet"],
+                "selectedCells": sol_dict.get("selectedCells", []),
+            },
+            timeout=5,
+        )
+        resp.raise_for_status()
+        track = resp.json().get("track", [])
+        if track:
+            xs = np.array([p["x"] for p in track], dtype=float)
+            ys = np.array([p["y"] for p in track], dtype=float)
+            result = (xs, ys)
+    except Exception:
+        pass
+
+    if track_cache is not None:
+        track_cache[sol_id] = result
+    return result
+
+
+def plot_archive_grid(stats, archive=None, iteration_idx=None, max_cols=15, max_sub_color=20,
+                      max_rows=None, save_dir=None, track_cache=None):
+    """Render archive buckets as a 2D grid colored by substitution count.
+
+    The grid dimensions are fixed across all frames (derived from the full
+    stats list), so frames can be assembled into an animation without any
+    layout shifts.  New buckets appear at the top-left and expand downward;
+    future empty rows are shown in light-gray.
+
+    Parameters
+    ----------
+    stats : list[dict]
+        Stats list produced by ``run_qd_loop`` (must contain
+        ``new_bucket_indices`` and ``substituted_bucket_indices``).
+    iteration_idx : int, optional
+        Index into *stats* to visualize. ``None`` → last iteration.
+    max_cols : int, optional
+        Fixed number of columns in the grid. Default 15.
+    max_sub_color : int, optional
+        Fixed upper bound for the colorbar (substitution count). Default 20.
+    max_rows : int, optional
+        Fixed number of rows.  ``None`` → derived from the total number of
+        unique buckets across *all* stats entries so it is consistent for
+        every frame.
+    save_dir : str, optional
+        Directory where the figure should be saved.
+    archive : pyribs archive, optional
+        If provided, a miniature spline drawing is rendered in each cell by
+        calling the ``/reconstruct`` endpoint on the bucket's current elite.
+    track_cache : dict, optional
+        Mutable dict passed between calls to avoid redundant API requests.
+        Pass the same dict object across all frames for maximum reuse.
+    """
+    if iteration_idx is None:
+        iteration_idx = len(stats) - 1
+
+    # ── Fixed grid dimensions derived from the full stats list ──
+    cols = max_cols
+    if max_rows is None:
+        all_buckets = []
+        seen = set()
+        for s in stats:
+            for idx in s.get("new_bucket_indices", []):
+                if idx not in seen:
+                    seen.add(idx)
+                    all_buckets.append(idx)
+        max_rows = max(1, int(np.ceil(len(all_buckets) / cols)))
+
+    # Replay stats up to iteration_idx
+    bucket_order = []
+    sub_counts = {}
+    for s in stats[:iteration_idx + 1]:
+        for idx in s.get("new_bucket_indices", []):
+            bucket_order.append(idx)
+        for idx in s.get("substituted_bucket_indices", []):
+            sub_counts[idx] = sub_counts.get(idx, 0) + 1
+
+    if len(bucket_order) == 0:
+        return
+
+    # Build grid — always (max_rows × cols), NaN = not yet filled
+    grid = np.full((max_rows, cols), np.nan)
+    for pos, idx in enumerate(bucket_order):
+        r, c = divmod(pos, cols)
+        grid[r, c] = sub_counts.get(idx, 0)
+
+    cmap = LinearSegmentedColormap.from_list(
+        "sub", ["white", "#ffff00", "red"])
+    cmap.set_bad("lightgray")
+
+    # Fixed figure size based on max_rows so it never changes between frames
+    fig_w = max(6, cols * 0.6)
+    fig_h = max(4, max_rows * 0.6)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    im = ax.imshow(grid, cmap=cmap, vmin=0, vmax=max_sub_color,
+                   aspect="equal", interpolation="nearest",
+                   origin="upper",
+                   extent=(-0.5, cols - 0.5, max_rows - 0.5, -0.5))
+
+    # Fixed colorbar — fraction/pad keep it stable regardless of ax height
+    plt.colorbar(im, ax=ax, label="Substitution Count",
+                 fraction=0.046, pad=0.04)
+
+    # ── Build bucket → solution map for track drawing ──
+    bucket_to_sol = {}
+    if archive is not None:
+        arch_data = archive.data()
+        for _idx, _sol in zip(arch_data["index"], arch_data["solution"]):
+            bucket_to_sol[int(_idx)] = array_to_solution(_sol)
+
+    for pos, idx in enumerate(bucket_order):
+        r, c = divmod(pos, cols)
+        count = sub_counts.get(idx, 0)
+
+        # Draw track spline if archive + API are available
+        if idx in bucket_to_sol:
+            outline = _get_track_outline(bucket_to_sol[idx], track_cache)
+            if outline is not None:
+                xs, ys = outline
+                xspan = xs.max() - xs.min()
+                yspan = ys.max() - ys.min()
+                if xspan > 1e-6 and yspan > 1e-6:
+                    pad = 0.1
+                    xs_n = (xs - xs.min()) / xspan
+                    ys_n = (ys - ys.min()) / yspan
+                    cell_xs = c - (0.5 - pad) + xs_n * (1.0 - 2 * pad)
+                    cell_ys = r - (0.5 - pad) + ys_n * (1.0 - 2 * pad)
+                    ax.plot(cell_xs, cell_ys, color="black",
+                            linewidth=0.4, alpha=0.55, zorder=2)
+
+        # Substitution count — top-left corner so it doesn't clash with the track
+        if count > 0:
+            ax.text(c - 0.42, r - 0.40, str(count),
+                    ha="left", va="top", fontsize=5, zorder=3,
+                    color="black" if count < max_sub_color * 0.6 else "white")
+
+    ax.set_xticks(np.arange(-0.5, cols, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, max_rows, 1), minor=True)
+    ax.grid(which="minor", color="gray", linewidth=0.5)
+    ax.tick_params(which="both", bottom=False, left=False,
+                   labelbottom=False, labelleft=False)
+    # Lock axis limits so the grid never shifts
+    ax.set_xlim(-0.5, cols - 0.5)
+    ax.set_ylim(max_rows - 0.5, -0.5)
+
+    it_label = stats[iteration_idx]["iteration"]
+    ax.set_title(f"Archive Grid — Iteration {it_label}  "
+                 f"({len(bucket_order)} / {max_rows * cols} buckets filled)")
+
+    plt.tight_layout()
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        fig.savefig(os.path.join(save_dir, f"archive_grid_iter_{iteration_idx:04d}.png"),
+                    dpi=100, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
+        plt.close(fig)
+
+
+def plot_archive_heatmap(archive, iteration, save_dir, seed=None):
     """2D umap compression of the archive's behavioural space, colored by fitness."""
     archive_data = archive.data()
-    solutions = archive_data["solution"]
-    solution_dicts = [array_to_solution(sol) for sol in solutions]
     embeddings = archive_data["measures"]
     fitnesses = archive_data["objective"]
-    
+
+    min_samples = 16  # umap default n_neighbors=15, needs at least n_neighbors+1
+    if len(embeddings) < min_samples:
+        return
+
+    solutions = archive_data["solution"]
+    solution_dicts = [array_to_solution(sol) for sol in solutions]
+
     reducer = umap.UMAP(n_components=2, random_state=seed)
     umap_compression = reducer.fit_transform(embeddings)
-    
-    plt.scatter(umap_compression[:, 0], umap_compression[:, 1], c=fitnesses, cmap="viridis", s=10)
-    plt.colorbar(label="Fitness")
+
+    os.makedirs(save_dir, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sc = ax.scatter(umap_compression[:, 0], umap_compression[:, 1],
+                    c=fitnesses, cmap="viridis", s=10)
+    plt.colorbar(sc, ax=ax, label="Fitness")
     plt.tight_layout()
-    plt.savefig(f"{HEATMAP_DIR}archive_heatmap_iter_{iteration}.png")
-    
-    # Save data for interactive visualization
-    np.savez_compressed(f"{HEATMAP_DIR}archive_data_iter_{iteration}.npz",
+    fig.savefig(os.path.join(save_dir, f"archive_heatmap_iter_{iteration}.png"))
+    plt.close(fig)
+
+    np.savez_compressed(os.path.join(save_dir, f"archive_data_iter_{iteration}.npz"),
                         umap=umap_compression, fitness=fitnesses, solutions=solution_dicts)
-    
+
+
 def plot_stats(stats, title="QD Run Statistics"):
     """5-row run-statistics plot (archive growth, fitness, new elites, substituted elites, cumulative)."""
 
-    iterations    = [s["iteration"] + 1 for s in stats]
+    iterations = [s["iteration"] for s in stats]
     archive_sizes = [s["Archive size"] for s in stats]
-    iter_best     = [s["iteration_best"] for s in stats]
-    global_best   = [s["global_best_score"] for s in stats]
-    new_elites    = [s["new_elites"] for s in stats]
-    sub_elites    = [s["substituted_elites"] for s in stats]
+    iter_best = [s["iteration_best"] for s in stats]
+    global_best = [s["global_best_score"] for s in stats]
+    new_elites = [s["new_elites"] for s in stats]
+    sub_elites = [s["substituted_elites"] for s in stats]
 
     # Filter out INVALID_SCORE so the y-axis isn't crushed
     iter_best_clean = [v if v != INVALID_SCORE else np.nan for v in iter_best]
@@ -439,9 +671,9 @@ def export_elites(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     data_archive = archive.data()
-    solutions  = np.array(data_archive["solution"])
+    solutions = np.array(data_archive["solution"])
     objectives = np.array(data_archive["objective"])
-    measures   = np.array(data_archive["measures"])
+    measures = np.array(data_archive["measures"])
 
     elites_list = []
     skipped_invalid = 0
@@ -451,7 +683,7 @@ def export_elites(
             skipped_invalid += 1
             continue
 
-        sol_arr  = solutions[idx]
+        sol_arr = solutions[idx]
         sol_dict = array_to_solution(sol_arr)
 
         elite = {
@@ -468,7 +700,8 @@ def export_elites(
         elites_list.append(elite)
 
     if skipped_invalid:
-        print(f"Skipped {skipped_invalid} elites with invalid fitness (INVALID_SCORE or NaN)")
+        print(
+            f"Skipped {skipped_invalid} elites with invalid fitness (INVALID_SCORE or NaN)")
 
     elites_list.sort(key=lambda e: e["fitness"], reverse=True)
 
@@ -491,6 +724,7 @@ def export_elites(
         json.dump(output, f, indent=2)
 
     print(f"Saved {len(elites_list)} elites to {output_path}")
-    print(f"  Best fitness:  {elites_list[0]['fitness']:.4f} (ID={elites_list[0]['id']})")
+    print(
+        f"  Best fitness:  {elites_list[0]['fitness']:.4f} (ID={elites_list[0]['id']})")
     print(f"  Worst fitness: {elites_list[-1]['fitness']:.4f}")
     print(f"  File size:     {os.path.getsize(output_path) / 1024:.1f} KB")

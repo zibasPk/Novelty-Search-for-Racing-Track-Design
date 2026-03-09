@@ -37,9 +37,16 @@ CHECKPOINT_EVERY = 50
 DEBUG_CROSSOVER = True
 DEBUG_MUTATION = True
 
-# --- Directories (Create if not exist in main notebook setup) ---
-CHECKPOINT_DIR = "data/checkpoints/"
-HEATMAP_DIR = "data/heatmaps/"
-STATS_DIR = "data/stats/"
-BUFFER_DIR = "data/buffers/"
+# --- Directories ---
+CVT_DIR = "data/cvt/"
+NS_DIR = "data/ns/"
+CHECKPOINT_DIR = "checkpoints/"
+HEATMAP_DIR = "heatmaps/"
+GRIDPLOT_DIR = "gridplots/"
+STATS_FILENAME = "stats.pkl"
+BUFFER_FILENAME = "buffer.json"
+ELITES_FILENAME = "elites.json"
+
+STATS_DIR = "stats/"
+BUFFER_DIR = "buffers/"
 

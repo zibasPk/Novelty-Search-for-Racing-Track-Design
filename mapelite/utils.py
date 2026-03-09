@@ -44,8 +44,8 @@ def solution_to_array(sol):
             arr[idx + 1] = c.get("y", 0)
 
     # 3. rngMode (second-to-last element): 0 = uniform, 1 = perlin
-    rng_mode_str = sol.get("rngMode", "uniform")
-    arr[-2] = float(RngMode[rng_mode_str.upper()])
+    rng_mode = sol.get("rngMode", RngMode.UNIFORM)
+    arr[-2] = rng_mode
 
     # 4. Solution ID (last element)
     arr[-1] = sol.get("id", 0)
@@ -70,7 +70,10 @@ def array_to_solution(arr):
 
     # 3. rngMode (second-to-last element): 0 = uniform, 1 = perlin
     rng_val = int(arr[-2])
-    rng_mode = RngMode(rng_val).name.lower()  # "uniform" or "perlin"
+    try:
+        rng_mode = RngMode(rng_val)
+    except ValueError:
+        rng_mode = RngMode.UNIFORM  # fallback for invalid/sentinel (e.g. INVALID_SCORE fill)
 
     return {
         "id": float(arr[-1]),
