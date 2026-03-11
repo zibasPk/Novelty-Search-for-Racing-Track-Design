@@ -11,6 +11,8 @@ import joblib
 import umap
 import requests
 from contextlib import contextmanager
+from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import ConvexHull
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -134,7 +136,7 @@ class ArchiveVisualizer:
         self.gridplot_dir = gridplot_dir
         self.seed = seed
         self._track_cache: dict = {}
-        self._umap_model = joblib.load("mapelite\embeddings\models\model_metrics_VAE\model_metrics_VAE_latent32_umap.joblib")
+        self._umap_model = joblib.load("mapelite\embeddings\models\model_metrics_VAE_latent32_umap.joblib")
 
     # -- track outline helper -------------------------------------------------
 
@@ -250,10 +252,12 @@ class ArchiveVisualizer:
 
         # ── Build bucket → solution map for track drawing ──
         bucket_to_sol = {}
+        bucket_to_fitness = {}
         if archive is not None:
             arch_data = archive.data()
-            for _idx, _sol in zip(arch_data["index"], arch_data["solution"]):
+            for _idx, _sol, _obj in zip(arch_data["index"], arch_data["solution"], arch_data["objective"]):
                 bucket_to_sol[int(_idx)] = array_to_solution(_sol)
+                bucket_to_fitness[int(_idx)] = float(_obj)
 
         # Buckets newly inserted or substituted at this specific iteration
         current_changed = set(stats[iteration_idx].get("new_bucket_indices", [])) | \
@@ -285,6 +289,13 @@ class ArchiveVisualizer:
                         ha="left", va="top", fontsize=5, zorder=3,
                         color="black" if count < max_sub_color * 0.6 else "white")
 
+            if idx in bucket_to_fitness:
+                fit_val = bucket_to_fitness[idx]
+                if np.isfinite(fit_val) and fit_val != INVALID_SCORE:
+                    ax.text(c + 0.44, r + 0.44, f"{fit_val:.1f}",
+                            ha="right", va="bottom", fontsize=4, zorder=3,
+                            color="blue")
+
         ax.set_xticks(np.arange(-0.5, cols, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, max_rows, 1), minor=True)
         ax.grid(which="minor", color="gray", linewidth=0.5)
@@ -301,7 +312,7 @@ class ArchiveVisualizer:
         if save_dir:
             os.makedirs(save_dir, exist_ok=True)
             fig.savefig(os.path.join(save_dir, f"archive_grid_iter_{iteration_idx:04d}.png"),
-                        dpi=100, bbox_inches="tight")
+                        dpi=200, bbox_inches="tight")
             plt.close(fig)
         else:
             plt.show()
@@ -309,7 +320,7 @@ class ArchiveVisualizer:
 
     # -- heatmap --------------------------------------------------------------
 
-    def plot_heatmap(self, iteration, save_dir=None, starting_size = ((-1, 8.5), (7.5, 11))):
+    def plot_heatmap(self, iteration, save_dir=None, starting_size = ((7.5, 11), (-2, 8.5))):
         """2D UMAP compression of the archive's behavioural space, colored by fitness."""
         # Min/max fitness for consistent coloring across iterations.  Adjust as needed.
         MAX_FIT = 60
@@ -363,78 +374,193 @@ class ArchiveVisualizer:
     # -- stats plot -----------------------------------------------------------
 
     def plot_stats(self, title="QD Run Statistics"):
-        """6-row run-statistics plot."""
+        """Modular run-statistics plot.
+
+        Each subplot is driven by an entry in ``PANELS`` below.  To add a new
+        graph, append one more dict to the list — no other code needs to
+        change.  If a key is absent from the stats (or all-NaN), the panel is
+        rendered as an empty placeholder so the layout stays consistent.
+
+        Panel ``type`` values
+        ---------------------
+        ``"line"``        – simple line plot; requires ``key``, ``color``.
+        ``"bar"``         – bar chart;         requires ``key``, ``color``.
+        ``"multi_line"``  – overlaid lines;    requires ``series`` list of
+                            ``{key, label, color, alpha?, linewidth?,
+                            clean_invalid?}``.
+        ``"cumulative"``  – cumulative new + substituted elites (no extra keys).
+        ``"wss"``         – line plot with optional ``initial_WSS`` reference;
+                            requires ``key``, ``color``.
+        """
         stats = self.stats
+        if not stats:
+            print("No stats to plot.")
+            return
 
-        iterations = [s["iteration"] for s in stats]
-        archive_sizes = [s["Archive size"] for s in stats]
-        iter_best = [s["iteration_best"] for s in stats]
-        global_best = [s["global_best_score"] for s in stats]
-        new_elites = [s["new_elites"] for s in stats]
-        sub_elites = [s["substituted_elites"] for s in stats]
-        wss_values = [s.get("wss", float("nan")) for s in stats]
+        iterations  = [s["iteration"] for s in stats]
+        initial_WSS = stats[0].get("initial_WSS")
+        bar_width   = max(1, len(iterations) // 200)
 
-        iter_best_clean = [v if v != INVALID_SCORE else np.nan for v in iter_best]
+        def get_series(key):
+            return [s.get(key, float("nan")) for s in stats]
 
-        fig, axes = plt.subplots(6, 1, figsize=(14, 19), sharex=True)
+        def is_empty(values):
+            for v in values:
+                try:
+                    if not np.isnan(float(v)):
+                        return False
+                except (TypeError, ValueError):
+                    return False
+            return True
+
+        # ── Panel definitions (extend this list to add new graphs) ────────────
+        PANELS = [
+            {
+                "title": "Archive Growth", "ylabel": "Archive Size",
+                "type": "line", "key": "Archive size", "color": "tab:blue",
+            },
+            {
+                "title": "Fitness Progress", "ylabel": "Fitness Score",
+                "type": "multi_line",
+                "series": [
+                    {"key": "iteration_best",   "label": "Iteration Best",
+                     "color": "tab:orange", "alpha": 0.6, "linewidth": 1,
+                     "clean_invalid": True},
+                    {"key": "global_best_score", "label": "Global Best",
+                     "color": "tab:red", "linewidth": 2},
+                ],
+            },
+            {
+                "title": "New Elites per Iteration", "ylabel": "Count",
+                "type": "bar", "key": "new_elites", "color": "tab:red",
+            },
+            {
+                "title": "Substituted Elites per Iteration", "ylabel": "Count",
+                "type": "bar", "key": "substituted_elites", "color": "tab:blue",
+            },
+            {
+                "title": "Cumulative Elite Insertions",
+                "ylabel": "Cumulative Count",
+                "type": "cumulative",
+            },
+            {
+                "title": "Within-Cluster Sum of Squares (WSS) — normalized by evaluated tracks",
+                "ylabel": "Mean WSS/track",
+                "type": "wss", "key": "wss", "color": "tab:brown",
+            },
+            {
+                "title": "QD-Score", "ylabel": "QD-Score",
+                "type": "line", "key": "qd_score", "color": "tab:green",
+            },
+            {
+                "title": "Archive Acceptance Rate", "ylabel": "Acceptance Rate",
+                "type": "line", "key": "acceptance_rate", "color": "tab:orange",
+            },
+            {
+                "title": "Mean Pairwise Distance (32-dim embedding)",
+                "ylabel": "Mean Distance",
+                "type": "line", "key": "mean_pairwise_dist", "color": "tab:purple",
+            },
+            {
+                "title": "High-Quality Coverage (fitness \u2265 30)",
+                "ylabel": "Count",
+                "type": "line", "key": "high_quality_coverage", "color": "darkred",
+            },
+            {
+                "title": "Convex Hull Area (UMAP 2-D projection)",
+                "ylabel": "Area",
+                "type": "line", "key": "convex_hull_area", "color": "teal",
+            },
+            {
+                "title": "Mean k-NN Novelty Score (NS only)",
+                "ylabel": "Mean k-NN Distance",
+                "type": "line", "key": "mean_knn_novelty", "color": "tab:cyan",
+            },
+            {
+                "title": "Fitness\u2013Novelty Correlation (NS only)",
+                "ylabel": "Pearson r",
+                "type": "line", "key": "fitness_novelty_corr", "color": "tab:pink",
+            },
+        ]
+
+        n_panels = len(PANELS)
+        fig, axes = plt.subplots(n_panels, 1,
+                                 figsize=(14, n_panels * 2.5), sharex=True)
+        if n_panels == 1:
+            axes = [axes]
         fig.suptitle(f"{title} — Run Statistics", fontsize=16, fontweight="bold")
 
-        ax = axes[0]
-        ax.plot(iterations, archive_sizes, color="tab:blue", linewidth=1.5)
-        ax.set_ylabel("Archive Size")
-        ax.set_title("Archive Growth")
-        ax.grid(True, alpha=0.3)
+        for ax, p in zip(axes, PANELS):
+            ptype = p["type"]
 
-        ax = axes[1]
-        ax.plot(iterations, iter_best_clean, label="Iteration Best",
-                color="tab:orange", alpha=0.6, linewidth=1)
-        ax.plot(iterations, global_best, label="Global Best",
-                color="tab:red", linewidth=2)
-        ax.set_ylabel("Fitness Score")
-        ax.set_title("Fitness Progress")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+            if ptype == "line":
+                values = get_series(p["key"])
+                if is_empty(values):
+                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                            transform=ax.transAxes, color="gray", fontsize=10)
+                else:
+                    ax.plot(iterations, values, color=p["color"], linewidth=1.5)
 
-        bar_width = max(1, len(iterations) // 200)
+            elif ptype == "bar":
+                values = get_series(p["key"])
+                if is_empty(values):
+                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                            transform=ax.transAxes, color="gray", fontsize=10)
+                else:
+                    ax.bar(iterations, values, width=bar_width,
+                           color=p["color"], alpha=0.8)
 
-        ax = axes[2]
-        ax.bar(iterations, new_elites, width=bar_width,
-               color="tab:red", alpha=0.8)
-        ax.set_ylabel("Count")
-        ax.set_title("New Elites per Iteration")
-        ax.grid(True, alpha=0.3)
+            elif ptype == "multi_line":
+                for s_cfg in p["series"]:
+                    values = get_series(s_cfg["key"])
+                    if s_cfg.get("clean_invalid"):
+                        values = [v if v != INVALID_SCORE else np.nan for v in values]
+                    ax.plot(iterations, values,
+                            label=s_cfg.get("label"),
+                            color=s_cfg.get("color", "black"),
+                            alpha=s_cfg.get("alpha", 1.0),
+                            linewidth=s_cfg.get("linewidth", 1.5))
+                ax.legend()
 
-        ax = axes[3]
-        ax.bar(iterations, sub_elites, width=bar_width,
-               color="tab:blue", alpha=0.8)
-        ax.set_ylabel("Count")
-        ax.set_title("Substituted Elites per Iteration")
-        ax.grid(True, alpha=0.3)
+            elif ptype == "cumulative":
+                new_e = get_series("new_elites")
+                sub_e = get_series("substituted_elites")
+                cum_new = np.cumsum(new_e)
+                cum_sub = np.cumsum(sub_e)
+                ax.plot(iterations, cum_new, label="Cumulative New",
+                        color="tab:green", linewidth=1.5)
+                ax.plot(iterations, cum_sub, label="Cumulative Substituted",
+                        color="tab:purple", linewidth=1.5)
+                ax.plot(iterations, cum_new + cum_sub, label="Cumulative Total",
+                        color="tab:blue", linewidth=2, linestyle="--")
+                ax.legend()
 
-        ax = axes[4]
-        cum_new = np.cumsum(new_elites)
-        cum_sub = np.cumsum(sub_elites)
-        ax.plot(iterations, cum_new, label="Cumulative New",
-                color="tab:green", linewidth=1.5)
-        ax.plot(iterations, cum_sub, label="Cumulative Substituted",
-                color="tab:purple", linewidth=1.5)
-        ax.plot(iterations, cum_new + cum_sub, label="Cumulative Total",
-                color="tab:blue", linewidth=2, linestyle="--")
-        ax.set_ylabel("Cumulative Count")
-        ax.set_title("Cumulative Elite Insertions")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+            elif ptype == "wss":
+                values = get_series(p["key"])
+                if is_empty(values):
+                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                            transform=ax.transAxes, color="gray", fontsize=10)
+                else:
+                    ax.plot(iterations, values, color=p["color"], linewidth=1.5)
+                if initial_WSS is not None:
+                    ax.axhline(initial_WSS, color="red", linewidth=1.5,
+                               linestyle="--",
+                               label=f"Training mean WSS/track ({initial_WSS:.2f})")
+                    ax.legend()
 
-        ax = axes[5]
-        ax.plot(iterations, wss_values, color="tab:brown", linewidth=1.5)
-        ax.set_xlabel("Iteration")
-        ax.set_ylabel("WSS")
-        ax.set_title("Within-Cluster Sum of Squares (WSS)")
-        ax.grid(True, alpha=0.3)
+            ax.set_ylabel(p.get("ylabel", ""))
+            ax.set_title(p["title"])
+            ax.grid(True, alpha=0.3)
 
+        axes[-1].set_xlabel("Iteration")
         plt.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
 
+        # ── Summary printout ─────────────────────────────────────────────────
+        archive_sizes = get_series("Archive size")
+        global_best   = get_series("global_best_score")
+        new_elites    = get_series("new_elites")
+        sub_elites    = get_series("substituted_elites")
         print(f"\n{'='*50}")
         print(f"  {title} Summary")
         print(f"{'='*50}")
@@ -557,6 +683,7 @@ class QDRunner:
         buffer_path=None,
         seed=None,
         centroids=None,
+        initial_WSS=None,
     ):
         self.scheduler = scheduler
         self.archive = archive
@@ -571,7 +698,7 @@ class QDRunner:
         self.seed = seed
         # Fixed centroids for WSS (CVT case). None → use archive measures (NS case).
         self.centroids = np.asarray(centroids) if centroids is not None else None
-
+        self.initial_WSS = initial_WSS
         # Mutable run state
         self.global_best_score = INVALID_SCORE
         self.global_best_id = None
@@ -589,7 +716,7 @@ class QDRunner:
     # -- factory helpers ------------------------------------------------------
 
     @staticmethod
-    def setup_dask(batch_size=BATCH_SIZE):
+    def setup_dask(batch_size=BATCH_SIZE, model_path=None):
         """Create a Dask LocalCluster and scatter the evaluator to all workers.
 
         Returns ``(client, cluster, evaluator_future)``.
@@ -600,8 +727,7 @@ class QDRunner:
         client = Client(cluster)
         print(f"Dask Dashboard link: {client.dashboard_link}")
 
-        evaluator = EvaluatorMetrics.load_pretrained(
-            "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_latent32.pth")
+        evaluator = EvaluatorMetrics.load_pretrained(model_path)
         evaluator_future = client.scatter(evaluator, broadcast=True)
         print(f"Evaluator scattered to {batch_size} Dask workers")
 
@@ -680,10 +806,12 @@ class QDRunner:
     # -- WSS helper -----------------------------------------------------------
 
     def _compute_wss(self, centroids: np.ndarray) -> float:
-        """Within-cluster Sum of Squares for all buffer embeddings.
+        """Mean per-point Within-Cluster Sum of Squares for all buffer embeddings.
 
         For each embedding in the buffer the squared distance to the nearest
-        centroid is computed; WSS is the sum of these minimum squared distances.
+        centroid is computed; returns the *mean* of these minimum squared
+        distances (total WSS / N) so the value is comparable across iterations
+        regardless of how many tracks have been evaluated.
 
         Parameters
         ----------
@@ -704,7 +832,77 @@ class QDRunner:
             (embeddings[:, np.newaxis, :] - centroids[np.newaxis, :, :]) ** 2,
             axis=2,
         )
-        return float(np.sum(np.min(sq_dists, axis=1)))
+        return float(np.mean(np.min(sq_dists, axis=1)))
+
+    # -- additional metrics helpers -------------------------------------------
+
+    def _compute_qd_score(self, arch_obj: np.ndarray) -> float:
+        """Sum of all valid elite fitnesses (QD-Score)."""
+        valid = arch_obj[(arch_obj != INVALID_SCORE) & np.isfinite(arch_obj)]
+        return float(np.sum(valid)) if len(valid) > 0 else 0.0
+
+    def _compute_acceptance_rate(self, new_count: int, sub_count: int, batch_size: int) -> float:
+        """Fraction of evaluated candidates accepted (new or improved) into the archive."""
+        return (new_count + sub_count) / batch_size if batch_size > 0 else 0.0
+
+    def _compute_mean_pairwise_dist(self, measures: np.ndarray) -> float:
+        """Mean pairwise Euclidean distance among archive members (sampled for speed)."""
+        n = len(measures)
+        if n < 2:
+            return float("nan")
+        max_sample = 500
+        if n > max_sample:
+            rng = np.random.default_rng(42)
+            sample = measures[rng.choice(n, max_sample, replace=False)]
+        else:
+            sample = measures
+        # Use |a-b|^2 = |a|^2 + |b|^2 - 2*a·b for memory efficiency
+        sq_norms = np.sum(sample ** 2, axis=1)
+        sq_dists = np.clip(
+            sq_norms[:, None] + sq_norms[None, :] - 2 * (sample @ sample.T),
+            0, None,
+        )
+        i_upper = np.triu_indices(len(sample), k=1)
+        return float(np.mean(np.sqrt(sq_dists[i_upper])))
+
+    def _compute_high_quality_coverage(self, arch_obj: np.ndarray,
+                                       threshold: float = 30.0) -> int:
+        """Count of archive elites with fitness >= *threshold*."""
+        valid = arch_obj[(arch_obj != INVALID_SCORE) & np.isfinite(arch_obj)]
+        return int(np.sum(valid >= threshold))
+
+    def _compute_convex_hull_area(self, measures: np.ndarray) -> float:
+        """Area of the convex hull of UMAP-projected archive measures (2-D)."""
+        if len(measures) < 3:
+            return float("nan")
+        try:
+            umap_pts = self._visualizer._umap_model.transform(measures)
+            return float(ConvexHull(umap_pts).volume)  # 'volume' == area in 2-D
+        except Exception:
+            return float("nan")
+
+    def _compute_mean_knn_novelty(self, measures: np.ndarray, k: int = 5) -> float:
+        """Mean k-NN distance among archive members — the NS novelty proxy."""
+        if len(measures) < k + 1:
+            return float("nan")
+        nbrs = NearestNeighbors(n_neighbors=k + 1).fit(measures)
+        dists, _ = nbrs.kneighbors(measures)
+        return float(np.mean(dists[:, 1:]))  # exclude self (column 0)
+
+    def _compute_fitness_novelty_corr(self, measures: np.ndarray,
+                                      fitnesses: np.ndarray, k: int = 5) -> float:
+        """Pearson correlation between per-elite k-NN novelty score and fitness."""
+        valid_mask = (fitnesses != INVALID_SCORE) & np.isfinite(fitnesses)
+        m = measures[valid_mask]
+        f = fitnesses[valid_mask]
+        if len(m) < k + 2:
+            return float("nan")
+        nbrs = NearestNeighbors(n_neighbors=k + 1).fit(m)
+        dists, _ = nbrs.kneighbors(m)
+        novelty = np.mean(dists[:, 1:], axis=1)
+        if np.std(novelty) < 1e-10 or np.std(f) < 1e-10:
+            return float("nan")
+        return float(np.corrcoef(novelty, f)[0, 1])
 
     # -- archive add() tracking -----------------------------------------------
 
@@ -820,19 +1018,32 @@ class QDRunner:
                         self._sub_counts[idx_int] = self._sub_counts.get(idx_int, 0) + 1
 
             # ── WSS ──
+            measures = data_archive["measures"]
             if self.centroids is not None:
                 # CVT: fixed centroids supplied at construction time
                 wss_centroids = self.centroids
             else:
                 # NS: use the inserted elites currently in the archive
-                arch_measures = data_archive["measures"]
-                wss_centroids = arch_measures if len(arch_measures) > 0 else None
+                wss_centroids = measures if len(measures) > 0 else None
 
             wss = self._compute_wss(wss_centroids) if wss_centroids is not None else float("nan")
-            print(f"WSS = {wss:.4f}" if not np.isnan(wss) else "WSS = nan (no centroids yet)")
+            print(f"Mean WSS/track = {wss:.4f}" if not np.isnan(wss) else "Mean WSS/track = nan (no centroids yet)")
+
+            # ── Additional metrics ──
+            is_ns = self.centroids is None
+            qd_score             = self._compute_qd_score(arch_obj)
+            acceptance_rate      = self._compute_acceptance_rate(
+                new_elites_count, sub_elites_count, len(sol_dicts))
+            mean_pairwise_dist   = self._compute_mean_pairwise_dist(measures)
+            high_quality_cov     = self._compute_high_quality_coverage(arch_obj)
+            convex_hull_area     = self._compute_convex_hull_area(measures)
+            # NS-only metrics: k-NN novelty score and fitness–novelty correlation
+            mean_knn_novelty     = self._compute_mean_knn_novelty(measures) if is_ns else float("nan")
+            fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_obj) if is_ns else float("nan")
 
             self.stats.append({
                 "iteration": i,
+                "initial_WSS": self.initial_WSS,
                 "Archive size": elites,
                 "iteration_best": batch_best,
                 "global_best_score": self.global_best_score,
@@ -841,6 +1052,13 @@ class QDRunner:
                 "new_bucket_indices": iter_new_indices,
                 "substituted_bucket_indices": iter_sub_indices,
                 "wss": wss,
+                "qd_score": qd_score,
+                "acceptance_rate": acceptance_rate,
+                "mean_pairwise_dist": mean_pairwise_dist,
+                "high_quality_coverage": high_quality_cov,
+                "convex_hull_area": convex_hull_area,
+                "mean_knn_novelty": mean_knn_novelty,
+                "fitness_novelty_corr": fitness_novelty_corr,
             })
 
             # ── Checkpoint ──
@@ -860,8 +1078,9 @@ class QDRunner:
 
                 self._evaluation_buffer.save()
 
-            self._visualizer.plot_heatmap(i)
-            self._visualizer.plot_grid()
+            if new_elites_count > 0 or sub_elites_count > 0:
+                self._visualizer.plot_heatmap(i)
+                self._visualizer.plot_grid()
 
         # Final save
         self._evaluation_buffer.save()
