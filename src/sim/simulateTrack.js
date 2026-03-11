@@ -79,7 +79,7 @@ export async function simulate(
     log.debug(`Generating and moving track files to Docker container for ${seed}`);
     const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
 
-    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e -tr`;
+    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} -e`;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>

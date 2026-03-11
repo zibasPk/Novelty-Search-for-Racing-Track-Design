@@ -38,6 +38,7 @@ DEBUG_CROSSOVER = True
 DEBUG_MUTATION = True
 
 # --- Directories ---
+EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng.pth"
 CVT_DIR = "data/cvt/"
 NS_DIR = "data/ns/"
 CHECKPOINT_DIR = "checkpoints/"

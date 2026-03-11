@@ -80,11 +80,12 @@ def create_dataset(source_folder, output_file, max_files=None):
     print(f"Files with invalid fitness data: {invalid_fitness_count}")
 
 if __name__ == "__main__":
-    SOURCE_DIR = 'data/voronoi/fitted'
+    SOURCE_DIR = 'data/Archive/voronoi final mixed parallel gen/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/metrics/dataset20k_mixedRng.npz'
+    OUTPUT_DIR = 'mapelite/embeddings/datasets/'
+    OUTPUT_NAME = 'dataset20k_mixedRng.npz'
 
     # Ensure output directory exists
-    Path('data/datasets/metrics').mkdir(parents=True, exist_ok=True)
+    Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
-    create_dataset(SOURCE_DIR, OUTPUT_NAME, 20000)
+    create_dataset(SOURCE_DIR, os.path.join(OUTPUT_DIR, OUTPUT_NAME), 20000)

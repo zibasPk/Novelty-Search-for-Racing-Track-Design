@@ -17,7 +17,7 @@ DATASETS_FOLDER = BASE_DIR / "datasets/embeddings/good"
 TRACKS_FILE = BASE_DIR / "datasets/tracks_mixedRng.npz"
 FITNESS_FILE = BASE_DIR / "datasets/fitness_dict_mixedRng.npz"
 
-DEFAULT_MAX_POINTS = 9000
+DEFAULT_MAX_POINTS = 15000
 
 # Fixed ranges for consistent visualization
 TRACE_RANGES = {
@@ -403,7 +403,8 @@ def update_details(clickData, track_metric):
                 bins_config = dict(start=m_range[0], end=m_range[1], size=(m_range[1]-m_range[0])/40)
 
             hist_fig.add_trace(go.Histogram(
-                x=raw_vals, 
+                x=raw_vals,
+                histnorm='percent',
                 marker_color='#636efa', 
                 opacity=0.75, 
                 xbins=bins_config

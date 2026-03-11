@@ -46,8 +46,8 @@ import fs from 'fs/promises';
 
 
 // load from data/voronoi/json the file named 123.json and generate the xml file
-const jsonDir = 'data/voronoi/fitted/';
-const filename = '12850.json';
+const jsonDir = 'data/Archive/voronoi final mixed parallel gen/fitted/';
+const filename = '866.json';
 const filePath = jsonDir + filename;
 
 const data = await fs.readFile(filePath, 'utf-8');
@@ -68,6 +68,7 @@ async function genJsonAndXml(trackData) {
     const seed = trackData.id;
     // translate to XML for TORCS
     const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
+    const trackXml = xmlGenerator.generateXML(0, true);
 
   } catch (e) {
     log.error(`Error generating track from file : ${e.message}`);
