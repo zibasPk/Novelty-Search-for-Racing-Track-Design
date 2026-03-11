@@ -37,12 +37,12 @@ class CustomEmitter(EmitterBase):
             
             # Here we fill up one dask batch_size if it's <= INIT_POPULATION
             for _ in range(self.batch_size):
-                sol = self.generate_solution()
+                sol, id = self.generate_solution()
                 arr = utils.solution_to_array(sol)
                 if arr is not None:
                     out.append(arr)
                 else:
-                    out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
+                    out.append(utils.invalid_solution_array(id))
             return np.array(out)
         else:
             # Main QD loop: 50/50 mutation or crossover
@@ -56,12 +56,13 @@ class CustomEmitter(EmitterBase):
     def generate_solution(self):
         """Generates a new track solution by calling the external API."""
         rngMode = RngMode.UNIFORM if self.iteration % 2 == 0 else RngMode.PERLIN
-
+        id = self.iteration - 1 + self._rng.random()  # Unique ID for tracking, based on iteration and randomness
+        
         try:
             response = requests.post(
                 f"{BASE_URL}/generate",
                 json={
-                    "id": self.iteration - 1 + self._rng.random(),
+                    "id": id,
                     "mode": GENERATION_MODE,
                     "trackSize": self._rng.randint(TRACK_SIZE_RANGE[0], TRACK_SIZE_RANGE[1]),
                     "rngMode": rngMode
@@ -73,10 +74,10 @@ class CustomEmitter(EmitterBase):
                 
             sol = response.json()
             sol["rngMode"] = rngMode  # persist rngMode in the genome
-            return sol
+            return sol, id
         except Exception as e:
             print(f"Error generating solution for iteration {self.iteration}: {e}")
-            return None 
+            return None, id
     
     def mutate_solutions(self):
         """Mutates existing elite solutions via the external API."""
@@ -118,11 +119,11 @@ class CustomEmitter(EmitterBase):
                     out.append(mutated_arr)
                     # print(f"Mutated ID={sol['id']} to ID={mutated['id']}") # Mute: too chatty
                 else:
-                    out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
+                    out.append(utils.invalid_solution_array(seed))
             
             except Exception as e:
                 print(f"Error mutating solution ID={sol['id']}: {e}")
-                out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
+                out.append(utils.invalid_solution_array(seed))
         
         return np.array(out)
 
@@ -133,7 +134,7 @@ class CustomEmitter(EmitterBase):
         if self.archive.stats.num_elites < 2:
             # Not enough elites to perform crossover, return invalid solutions
             print("Not enough elites for crossover, returning invalid solutions")
-            return np.array([np.full(SOLUTION_DIM, INVALID_SCORE) for _ in range(self.batch_size)])
+            return np.array([utils.invalid_solution_array() for _ in range(self.batch_size)])
         
         out = []
         
@@ -185,10 +186,10 @@ class CustomEmitter(EmitterBase):
                     out.append(child_arr)
                     # print(f"Crossover Parent1 ID={sol1['id']}, Parent2 ID={sol2['id']} => Child ID={child_id}") # Mute: too chatty
                 else:
-                    out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
+                    raise Exception("Invalid child solution format received from crossover API")
             
             except Exception as e:
                 print(f"Error during crossover: {e}")
-                out.append(np.full(SOLUTION_DIM, INVALID_SCORE))
+                out.append(utils.invalid_solution_array(seed))
 
         return np.array(out)

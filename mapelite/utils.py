@@ -82,6 +82,16 @@ def array_to_solution(arr):
         "dataSet": ds,
         "selectedCells": sel
     }
+    
+def invalid_solution_array(id = INVALID_SCORE):
+    """Returns a flat array filled with INVALID_SCOREs except for the last element which holds the ID, used to represent invalid solutions."""
+    arr = np.full(SOLUTION_DIM, INVALID_SCORE)
+    arr[-1] = id
+    return arr
+
+def is_valid_solution_array(arr):
+    """Checks if a solution array is valid (not filled with INVALID_SCORE)."""
+    return arr is not None and not np.all(arr[:-1] == INVALID_SCORE)  # Ignore ID in validity check
 
 def get_fractional_part(x):
     """Gets the fractional part of a float ID, used for mutation/crossover."""

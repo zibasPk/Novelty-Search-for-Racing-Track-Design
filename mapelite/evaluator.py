@@ -6,7 +6,7 @@ import joblib
 import torch
 
 from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
-from utils import EMBEDDING_MODEL, pca_align
+from utils import EMBEDDING_MODEL, pca_align, solution_to_array, is_valid_solution_array
 from abc import ABC, abstractmethod
 from config import (
     BASE_URL, INVALID_SCORE
@@ -128,6 +128,9 @@ class EvaluatorMetrics(Evaluator):
         msg = ""
         desc = np.zeros((self.embedding_dim,))  # Default descriptor
         fit_score = INVALID_SCORE
+        
+        if not is_valid_solution_array(solution_to_array(sol)):
+            return sol_id, False, "Invalid solution array", fit_score, desc
 
         try:
             # 1. Send solution for evaluation
