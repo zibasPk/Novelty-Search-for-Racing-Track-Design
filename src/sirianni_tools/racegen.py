@@ -139,8 +139,8 @@ def generate_benchmark_xml(path):
 
     <section name="Drivers">
         <section name="1">
-            <attnum name="idx" val="2"/>
-            <attstr name="module" val="olethros"/>
+            <attnum name="idx" val="4"/>
+            <attstr name="module" val="tita"/>
         </section>
     </section>
 </params>'''
