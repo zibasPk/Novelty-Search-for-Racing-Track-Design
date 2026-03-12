@@ -136,7 +136,8 @@ class ArchiveVisualizer:
         self.gridplot_dir = gridplot_dir
         self.seed = seed
         self._track_cache: dict = {}
-        self._umap_model = joblib.load("mapelite\embeddings\models\model_metrics_VAE_latent32_umap.joblib")
+        self._umap_model = joblib.load(
+            "mapelite\embeddings\models\model_metrics_VAE_latent32_umap.joblib")
 
     # -- track outline helper -------------------------------------------------
 
@@ -261,7 +262,7 @@ class ArchiveVisualizer:
 
         # Buckets newly inserted or substituted at this specific iteration
         current_changed = set(stats[iteration_idx].get("new_bucket_indices", [])) | \
-                          set(stats[iteration_idx].get("substituted_bucket_indices", []))
+            set(stats[iteration_idx].get("substituted_bucket_indices", []))
 
         for pos, idx in enumerate(bucket_order):
             r, c = divmod(pos, cols)
@@ -320,12 +321,12 @@ class ArchiveVisualizer:
 
     # -- heatmap --------------------------------------------------------------
 
-    def plot_heatmap(self, iteration, save_dir=None, starting_size = ((7.5, 11), (-2, 8.5))):
+    def plot_heatmap(self, iteration, save_dir=None, starting_size=((7.5, 11), (-2, 8.5))):
         """2D UMAP compression of the archive's behavioural space, colored by fitness."""
         # Min/max fitness for consistent coloring across iterations.  Adjust as needed.
         MAX_FIT = 60
         MIN_FIT = 0
-        
+
         if save_dir is None:
             save_dir = self.heatmap_dir
 
@@ -342,7 +343,6 @@ class ArchiveVisualizer:
 
         umap_compression = self._umap_model.transform(embeddings)
         fitnesses = np.asarray(fitnesses)
-
 
         cmap = plt.get_cmap("viridis").copy()
         # Set out of range values to distinct colors: under=below MIN_FIT, over=above MAX_FIT
@@ -365,7 +365,8 @@ class ArchiveVisualizer:
         ax.set_ylim(y_min, y_max)
 
         plt.tight_layout()
-        fig.savefig(os.path.join(save_dir, f"archive_heatmap_iter_{iteration}.png"))
+        fig.savefig(os.path.join(
+            save_dir, f"archive_heatmap_iter_{iteration}.png"))
         plt.close(fig)
 
         np.savez_compressed(os.path.join(save_dir, f"archive_data_iter_{iteration}.npz"),
@@ -397,9 +398,9 @@ class ArchiveVisualizer:
             print("No stats to plot.")
             return
 
-        iterations  = [s["iteration"] for s in stats]
+        iterations = [s["iteration"] for s in stats]
         initial_WSS = stats[0].get("initial_WSS")
-        bar_width   = max(1, len(iterations) // 200)
+        bar_width = max(1, len(iterations) // 200)
 
         def get_series(key):
             return [s.get(key, float("nan")) for s in stats]
@@ -467,11 +468,6 @@ class ArchiveVisualizer:
                 "type": "line", "key": "high_quality_coverage", "color": "darkred",
             },
             {
-                "title": "Convex Hull Area (UMAP 2-D projection)",
-                "ylabel": "Area",
-                "type": "line", "key": "convex_hull_area", "color": "teal",
-            },
-            {
                 "title": "Mean k-NN Novelty Score (NS only)",
                 "ylabel": "Mean k-NN Distance",
                 "type": "line", "key": "mean_knn_novelty", "color": "tab:cyan",
@@ -488,7 +484,8 @@ class ArchiveVisualizer:
                                  figsize=(14, n_panels * 2.5), sharex=True)
         if n_panels == 1:
             axes = [axes]
-        fig.suptitle(f"{title} — Run Statistics", fontsize=16, fontweight="bold")
+        fig.suptitle(f"{title} — Run Statistics",
+                     fontsize=16, fontweight="bold")
 
         for ax, p in zip(axes, PANELS):
             ptype = p["type"]
@@ -499,7 +496,8 @@ class ArchiveVisualizer:
                     ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
                             transform=ax.transAxes, color="gray", fontsize=10)
                 else:
-                    ax.plot(iterations, values, color=p["color"], linewidth=1.5)
+                    ax.plot(iterations, values,
+                            color=p["color"], linewidth=1.5)
 
             elif ptype == "bar":
                 values = get_series(p["key"])
@@ -514,7 +512,8 @@ class ArchiveVisualizer:
                 for s_cfg in p["series"]:
                     values = get_series(s_cfg["key"])
                     if s_cfg.get("clean_invalid"):
-                        values = [v if v != INVALID_SCORE else np.nan for v in values]
+                        values = [
+                            v if v != INVALID_SCORE else np.nan for v in values]
                     ax.plot(iterations, values,
                             label=s_cfg.get("label"),
                             color=s_cfg.get("color", "black"),
@@ -541,7 +540,8 @@ class ArchiveVisualizer:
                     ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
                             transform=ax.transAxes, color="gray", fontsize=10)
                 else:
-                    ax.plot(iterations, values, color=p["color"], linewidth=1.5)
+                    ax.plot(iterations, values,
+                            color=p["color"], linewidth=1.5)
                 if initial_WSS is not None:
                     ax.axhline(initial_WSS, color="red", linewidth=1.5,
                                linestyle="--",
@@ -558,9 +558,9 @@ class ArchiveVisualizer:
 
         # ── Summary printout ─────────────────────────────────────────────────
         archive_sizes = get_series("Archive size")
-        global_best   = get_series("global_best_score")
-        new_elites    = get_series("new_elites")
-        sub_elites    = get_series("substituted_elites")
+        global_best = get_series("global_best_score")
+        new_elites = get_series("new_elites")
+        sub_elites = get_series("substituted_elites")
         print(f"\n{'='*50}")
         print(f"  {title} Summary")
         print(f"{'='*50}")
@@ -694,10 +694,12 @@ class QDRunner:
         self.heatmap_dir = heatmap_dir
         self.gridplot_dir = gridplot_dir
         self.stats_path = stats_path
-        self.buffer_path = buffer_path or os.path.join(BUFFER_DIR, "buffer.json")
+        self.buffer_path = buffer_path or os.path.join(
+            BUFFER_DIR, "buffer.json")
         self.seed = seed
         # Fixed centroids for WSS (CVT case). None → use archive measures (NS case).
-        self.centroids = np.asarray(centroids) if centroids is not None else None
+        self.centroids = np.asarray(
+            centroids) if centroids is not None else None
         self.initial_WSS = initial_WSS
         # Mutable run state
         self.global_best_score = INVALID_SCORE
@@ -877,7 +879,8 @@ class QDRunner:
             return float("nan")
         try:
             umap_pts = self._visualizer._umap_model.transform(measures)
-            return float(ConvexHull(umap_pts).volume)  # 'volume' == area in 2-D
+            # 'volume' == area in 2-D
+            return float(ConvexHull(umap_pts).volume)
         except Exception:
             return float("nan")
 
@@ -959,15 +962,18 @@ class QDRunner:
             for (sol_id, ok, msg, score, measures), sol_dict in zip(gathered, sol_dicts):
 
                 if not ok:
-                    print(f"Warning: clamping bad score for ID={sol_id} ({msg})")
+                    print(
+                        f"Warning: clamping bad score for ID={sol_id} ({msg})")
                     score = INVALID_SCORE
                 else:
-                    print(f"Solution ID={sol_id} evaluated with score={score:.2f}")
+                    print(
+                        f"Solution ID={sol_id} evaluated with score={score:.2f}")
                     if score > self.global_best_score:
                         self.global_best_score = score
                         self.global_best_id = sol_id
 
-                self._evaluation_buffer.record(sol_id, sol_dict, measures, score, ok)
+                self._evaluation_buffer.record(
+                    sol_id, sol_dict, measures, score, ok)
                 clean_solutions.append((score, measures))
                 obj_list.append(score)
 
@@ -1015,7 +1021,8 @@ class QDRunner:
                         self._bucket_order.append(idx_int)
                     elif float(_obj) != pre_obj_by_idx[idx_int]:
                         iter_sub_indices.append(idx_int)
-                        self._sub_counts[idx_int] = self._sub_counts.get(idx_int, 0) + 1
+                        self._sub_counts[idx_int] = self._sub_counts.get(
+                            idx_int, 0) + 1
 
             # ── WSS ──
             measures = data_archive["measures"]
@@ -1026,14 +1033,15 @@ class QDRunner:
                 # NS: use the inserted elites currently in the archive
                 wss_centroids = measures if len(measures) > 0 else None
 
-            wss = self._compute_wss(wss_centroids) if wss_centroids is not None else float("nan")
-            print(f"Mean WSS/track = {wss:.4f}" if not np.isnan(wss) else "Mean WSS/track = nan (no centroids yet)")
+            wss = self._compute_wss(
+                wss_centroids) if wss_centroids is not None else float("nan")
+            print(f"Mean WSS/track = {wss:.4f}" if not np.isnan(wss)
+                  else "Mean WSS/track = nan (no centroids yet)")
 
             # ── Additional metrics ──
             is_ns = self.centroids is None
             qd_score             = self._compute_qd_score(arch_obj)
-            acceptance_rate      = self._compute_acceptance_rate(
-                new_elites_count, sub_elites_count, len(sol_dicts))
+            acceptance_rate      = self._compute_acceptance_rate(new_elites_count, sub_elites_count, len(sol_dicts))
             mean_pairwise_dist   = self._compute_mean_pairwise_dist(measures)
             high_quality_cov     = self._compute_high_quality_coverage(arch_obj)
             convex_hull_area     = self._compute_convex_hull_area(measures)

@@ -45,8 +45,7 @@ class CustomEmitter(EmitterBase):
                     out.append(utils.invalid_solution_array(id))
             return np.array(out)
         else:
-            # Main QD loop: 50/50 mutation or crossover
-            if self._rng.random() < 0.5:
+            if self.iteration % 2 == 0:
                 # Mutate (returns BATCH_SIZE solutions)
                 return self.mutate_solutions()
             else:
