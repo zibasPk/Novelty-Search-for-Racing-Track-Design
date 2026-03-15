@@ -10,9 +10,11 @@ import json
 import joblib
 import umap
 import requests
+from mapelite.logging_config import get_logger
 from contextlib import contextmanager
 from sklearn.neighbors import NearestNeighbors
-from scipy.spatial import ConvexHull
+
+log = get_logger(__name__)
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,6 +29,7 @@ from mapelite.config import (
     BUFFER_DIR,
     CHECKPOINT_EVERY,
     INVALID_SCORE,
+    DEFAULT_START_ITER,
     HEATMAP_DIR
 )
 from utils import array_to_solution
@@ -57,10 +60,9 @@ class EvaluationBuffer:
             with open(self.buffer_path, "r") as f:
                 data = json.load(f)
             self.entries = data.get("tracks", [])
-            print(
-                f"[Buffer] Resumed {len(self.entries)} entries from {self.buffer_path}")
+            log.info("Buffer resumed", count=len(self.entries), path=self.buffer_path)
         else:
-            print(f"[Buffer] No existing buffer found — starting empty.")
+            log.info("Buffer empty — starting fresh", path=self.buffer_path)
 
     def save(self):
         """Write the full buffer to disk."""
@@ -71,8 +73,7 @@ class EvaluationBuffer:
         }
         with open(self.buffer_path, "w") as f:
             json.dump(payload, f)
-        print(
-            f"[Buffer] Saved {len(self.entries)} entries to {self.buffer_path}")
+        log.info("Buffer saved", count=len(self.entries), path=self.buffer_path)
 
     # -- recording ------------------------------------------------------------
 
@@ -169,14 +170,23 @@ class ArchiveVisualizer:
                 xs = np.array([p["x"] for p in track], dtype=float)
                 ys = np.array([p["y"] for p in track], dtype=float)
                 result = (xs, ys)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Track reconstruct failed", sol_id=sol_id, error=str(exc))
 
-        self._track_cache[sol_id] = result
+        # Cache only successful reconstructions so transient failures can retry
+        # on the next plotting call instead of staying permanently empty.
+        if result is not None:
+            self._track_cache[sol_id] = result
         return result
 
-    # -- grid plot ------------------------------------------------------------
 
+    def print_elites(self):
+        """Prints the ids of current elites and their fitness scores."""
+        if self.archive is not None:
+            for i, (idx, sol) in enumerate(self.archive.iter_elites()):
+                log.debug(f"Elite {i}: ID={sol['id']}, Score={sol['score']}")
+
+    # -- grid plot ------------------------------------------------------------
     def plot_grid(self, iteration_idx=None, max_cols=15, max_sub_color=20,
                   max_rows=None, save_dir=None):
         """Render archive buckets as a 2D grid colored by substitution count.
@@ -201,9 +211,6 @@ class ArchiveVisualizer:
 
         stats = self.stats
         archive = self.archive
-
-        if iteration_idx is None:
-            iteration_idx = len(stats) - 1
 
         # ── Fixed grid dimensions derived from the full stats list ──
         cols = max_cols
@@ -296,6 +303,10 @@ class ArchiveVisualizer:
                     ax.text(c + 0.44, r + 0.44, f"{fit_val:.1f}",
                             ha="right", va="bottom", fontsize=4, zorder=3,
                             color="blue")
+                elif fit_val == INVALID_SCORE:
+                    ax.text(c + 0.44, r + 0.44, "X",
+                            ha="right", va="bottom", fontsize=5, zorder=3,
+                            color="red", fontweight="bold")
 
         ax.set_xticks(np.arange(-0.5, cols, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, max_rows, 1), minor=True)
@@ -561,17 +572,17 @@ class ArchiveVisualizer:
         global_best = get_series("global_best_score")
         new_elites = get_series("new_elites")
         sub_elites = get_series("substituted_elites")
-        print(f"\n{'='*50}")
-        print(f"  {title} Summary")
-        print(f"{'='*50}")
-        print(f"  Total iterations:        {len(stats)}")
-        print(f"  Final archive size:      {archive_sizes[-1]}")
-        print(f"  Global best fitness:     {global_best[-1]:.4f}")
-        print(f"  Total new elites:        {sum(new_elites)}")
-        print(f"  Total substituted:       {sum(sub_elites)}")
-        print(f"  Avg new elites/iter:     {np.mean(new_elites):.2f}")
-        print(f"  Avg substituted/iter:    {np.mean(sub_elites):.2f}")
-        print(f"{'='*50}")
+        log.info(
+            "Run summary",
+            title=title,
+            total_iterations=len(stats),
+            final_archive_size=archive_sizes[-1],
+            global_best_fitness=f"{global_best[-1]:.4f}",
+            total_new_elites=sum(new_elites),
+            total_substituted=sum(sub_elites),
+            avg_new_per_iter=f"{np.mean(new_elites):.2f}",
+            avg_sub_per_iter=f"{np.mean(sub_elites):.2f}",
+        )
 
     # -- elite export ---------------------------------------------------------
 
@@ -610,8 +621,7 @@ class ArchiveVisualizer:
             elites_list.append(elite)
 
         if skipped_invalid:
-            print(
-                f"Skipped {skipped_invalid} elites with invalid fitness (INVALID_SCORE or NaN)")
+            log.warning("Skipped elites with invalid fitness", count=skipped_invalid)
 
         elites_list.sort(key=lambda e: e["fitness"], reverse=True)
 
@@ -633,11 +643,15 @@ class ArchiveVisualizer:
         with open(output_path, "w") as f:
             json.dump(output, f, indent=2)
 
-        print(f"Saved {len(elites_list)} elites to {output_path}")
-        print(
-            f"  Best fitness:  {elites_list[0]['fitness']:.4f} (ID={elites_list[0]['id']})")
-        print(f"  Worst fitness: {elites_list[-1]['fitness']:.4f}")
-        print(f"  File size:     {os.path.getsize(output_path) / 1024:.1f} KB")
+        log.info(
+            "Elites exported",
+            count=len(elites_list),
+            path=output_path,
+            best_fitness=f"{elites_list[0]['fitness']:.4f}",
+            best_id=elites_list[0]["id"],
+            worst_fitness=f"{elites_list[-1]['fitness']:.4f}",
+            file_kb=f"{os.path.getsize(output_path) / 1024:.1f}",
+        )
 
 
 # ── QD Runner ───────────────────────────────────────────────────────────────
@@ -723,15 +737,15 @@ class QDRunner:
 
         Returns ``(client, cluster, evaluator_future)``.
         """
-        print("Setting up Dask LocalCluster...")
+        log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
         cluster = LocalCluster(
             processes=True, n_workers=batch_size, threads_per_worker=1)
         client = Client(cluster)
-        print(f"Dask Dashboard link: {client.dashboard_link}")
+        log.debug("Dask cluster ready", dashboard=client.dashboard_link)
 
         evaluator = EvaluatorMetrics.load_pretrained(model_path)
         evaluator_future = client.scatter(evaluator, broadcast=True)
-        print(f"Evaluator scattered to {batch_size} Dask workers")
+        log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
 
         return client, cluster, evaluator_future
 
@@ -744,31 +758,44 @@ class QDRunner:
         ``scheduler`` / ``archive`` are *None* when no checkpoint was found.
         """
         checkpoints = sorted(glob.glob(f"{checkpoint_dir}checkpoint_*.pkl"))
-        start_iter = 1
-        global_best_score = INVALID_SCORE
-        global_best_id = None
+        
         scheduler = None
         archive = None
+        start_iter = DEFAULT_START_ITER
+        global_best_score = INVALID_SCORE
+        global_best_id = None
         stats = []
+        
+        if not checkpoints:
+            log.info("No checkpoint found — starting fresh")
+            return {
+                "scheduler": scheduler,
+                "archive": archive,
+                "start_iter": start_iter,
+                "global_best_score": global_best_score,
+                "global_best_id": global_best_id,
+                "stats": stats,
+            }
+        latest_ckpt = checkpoints[-1]
+        with open(latest_ckpt, "rb") as f:
+            state = pickle.load(f)
+            
+        scheduler = state["scheduler"]
+        archive = scheduler.archive
+        start_iter = state["iteration"] + 1 # Resume from the next iteration after the checkpointed one
+        global_best_score = state["global_best_score"]
+        global_best_id = state["global_best_id"]
+        
+        scheduler.emitters[0].iteration = start_iter
+        
+        log.info("Checkpoint loaded", path=latest_ckpt, resume_iter=start_iter)
 
-        if checkpoints:
-            latest_ckpt = checkpoints[-1]
-            with open(latest_ckpt, "rb") as f:
-                state = pickle.load(f)
-            scheduler = state["scheduler"]
-            archive = scheduler.archive
-            start_iter = state["iteration"] + 1
-            global_best_score = state["global_best_score"]
-            global_best_id = state["global_best_id"]
-            print(
-                f"[Resume] Loaded {latest_ckpt}, resuming from iteration {start_iter}")
+        if not os.path.exists(stats_path):
+            log.warning("Stats file not found at checkpoint resume", path=stats_path)
         else:
-            print("[Resume] No checkpoint found — starting fresh.")
-
-        if os.path.exists(stats_path):
             with open(stats_path, "rb") as f:
                 stats = pickle.load(f)
-        print(f"[Resume] Resumed stats with {len(stats)} entries")
+            log.info("Stats loaded", entries=len(stats))
 
         return {
             "scheduler": scheduler,
@@ -873,17 +900,6 @@ class QDRunner:
         valid = arch_obj[(arch_obj != INVALID_SCORE) & np.isfinite(arch_obj)]
         return int(np.sum(valid >= threshold))
 
-    def _compute_convex_hull_area(self, measures: np.ndarray) -> float:
-        """Area of the convex hull of UMAP-projected archive measures (2-D)."""
-        if len(measures) < 3:
-            return float("nan")
-        try:
-            umap_pts = self._visualizer._umap_model.transform(measures)
-            # 'volume' == area in 2-D
-            return float(ConvexHull(umap_pts).volume)
-        except Exception:
-            return float("nan")
-
     def _compute_mean_knn_novelty(self, measures: np.ndarray, k: int = 5) -> float:
         """Mean k-NN distance among archive members — the NS novelty proxy."""
         if len(measures) < k + 1:
@@ -944,7 +960,7 @@ class QDRunner:
 
     # -- main loop ------------------------------------------------------------
 
-    def run(self, total_iters, start_iter=1):
+    def run(self, total_iters, start_iter=DEFAULT_START_ITER):
         """Execute the ask → evaluate → tell loop.
 
         Returns ``(global_best_score, global_best_id, stats)``.
@@ -962,12 +978,10 @@ class QDRunner:
             for (sol_id, ok, msg, score, measures), sol_dict in zip(gathered, sol_dicts):
 
                 if not ok:
-                    print(
-                        f"Warning: clamping bad score for ID={sol_id} ({msg})")
+                    log.warning("Clamping bad score", sol_id=sol_id, reason=msg)
                     score = INVALID_SCORE
                 else:
-                    print(
-                        f"Solution ID={sol_id} evaluated with score={score:.2f}")
+                    log.info("Solution evaluated", sol_id=sol_id, score=f"{score:.2f}")
                     if score > self.global_best_score:
                         self.global_best_score = score
                         self.global_best_id = sol_id
@@ -995,11 +1009,15 @@ class QDRunner:
 
             # ── Logging ──
             batch_best = max(obj_list) if obj_list else INVALID_SCORE
-            print(f"Iteration {i} ended. Best in batch = {batch_best:.2f}")
-            print(
-                f"Global best so far: {self.global_best_score:.2f} (ID={self.global_best_id})")
-            print(f"Archive Updates: {new_elites_count} new elites inserted, "
-                  f"{sub_elites_count} elites substituted.")
+            log.info(
+                "Iteration complete",
+                iteration=i,
+                batch_best=f"{batch_best:.2f}",
+                global_best=f"{self.global_best_score:.2f}",
+                global_best_id=self.global_best_id,
+                new_elites=new_elites_count,
+                substituted=sub_elites_count,
+            )
 
             data_archive = self.archive.data()
             arch_obj = data_archive["objective"]
@@ -1007,8 +1025,12 @@ class QDRunner:
             mean_val = np.mean(arch_obj[valid]) if np.any(valid) else 0.0
             best_val = np.max(arch_obj[valid]) if np.any(valid) else 0.0
             elites = self.archive.stats.num_elites
-            print(
-                f"Archive size={elites}, mean={mean_val:.2f}, best={best_val:.2f}")
+            log.info(
+                "Archive stats",
+                size=elites,
+                mean=f"{mean_val:.2f}",
+                best=f"{best_val:.2f}",
+            )
 
             # ── Per-bucket diff ──
             iter_new_indices = []
@@ -1035,8 +1057,10 @@ class QDRunner:
 
             wss = self._compute_wss(
                 wss_centroids) if wss_centroids is not None else float("nan")
-            print(f"Mean WSS/track = {wss:.4f}" if not np.isnan(wss)
-                  else "Mean WSS/track = nan (no centroids yet)")
+            if not np.isnan(wss):
+                log.debug("WSS computed", wss=f"{wss:.4f}")
+            else:
+                log.debug("WSS skipped — no centroids yet")
 
             # ── Additional metrics ──
             is_ns = self.centroids is None
@@ -1044,7 +1068,6 @@ class QDRunner:
             acceptance_rate      = self._compute_acceptance_rate(new_elites_count, sub_elites_count, len(sol_dicts))
             mean_pairwise_dist   = self._compute_mean_pairwise_dist(measures)
             high_quality_cov     = self._compute_high_quality_coverage(arch_obj)
-            convex_hull_area     = self._compute_convex_hull_area(measures)
             # NS-only metrics: k-NN novelty score and fitness–novelty correlation
             mean_knn_novelty     = self._compute_mean_knn_novelty(measures) if is_ns else float("nan")
             fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_obj) if is_ns else float("nan")
@@ -1064,10 +1087,11 @@ class QDRunner:
                 "acceptance_rate": acceptance_rate,
                 "mean_pairwise_dist": mean_pairwise_dist,
                 "high_quality_coverage": high_quality_cov,
-                "convex_hull_area": convex_hull_area,
                 "mean_knn_novelty": mean_knn_novelty,
                 "fitness_novelty_corr": fitness_novelty_corr,
             })
+            
+            log.info("Stats updated", iteration=i, stats=self.stats[-1])
 
             # ── Checkpoint ──
             if i % CHECKPOINT_EVERY == 0:
@@ -1079,7 +1103,7 @@ class QDRunner:
                         "global_best_score": self.global_best_score,
                         "global_best_id": self.global_best_id,
                     }, f)
-                print(f"[Checkpoint] Saved {ckpt_name}")
+                log.info("Checkpoint saved", path=ckpt_name, iteration=i)
 
                 with open(self.stats_path, "wb") as f:
                     pickle.dump(self.stats, f)
@@ -1088,7 +1112,7 @@ class QDRunner:
 
             if new_elites_count > 0 or sub_elites_count > 0:
                 self._visualizer.plot_heatmap(i)
-                self._visualizer.plot_grid()
+                self._visualizer.plot_grid(i)
 
         # Final save
         self._evaluation_buffer.save()

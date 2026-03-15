@@ -137,7 +137,7 @@ app.post('/reconstruct', async (req, res) => {
       }))
     });
   } catch (error) {
-    log.error('/reconstruct error:', error);
+    log.error('/reconstruct error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

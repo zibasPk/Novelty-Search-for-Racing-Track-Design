@@ -3,6 +3,7 @@ import os
 import numpy as np
 import requests
 import joblib
+from mapelite.logging_config import get_logger
 import torch
 
 from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
@@ -11,6 +12,8 @@ from abc import ABC, abstractmethod
 from config import (
     BASE_URL, INVALID_SCORE
 )
+
+log = get_logger(__name__)
 
 
 class Evaluator(ABC):
@@ -38,8 +41,7 @@ class EvaluatorMAPElite(Evaluator):
         try:
             self.embedding_model = joblib.load(model_path)
         except FileNotFoundError:
-            print(
-                "Warning: UMAP model not found. Placeholder used. (Run the setup notebook first?)")
+            log.warning("UMAP model not found — using placeholder", path=model_path)
             # Placeholder class to prevent crash if model isn't trained/found
 
             class PlaceholderUMAP:
@@ -141,7 +143,7 @@ class EvaluatorMetrics(Evaluator):
 
             # 2. Extract raw fitness metrics
             fit = r_json.get("fitness", {})
-            print(f"Raw fitness metrics for solution {sol_id}: {fit}")
+            log.debug("Raw fitness metrics", sol_id=sol_id, metrics=fit)
             
             desc = self.descriptor_from_metrics(fit.get("embedding_data", []))
             # 3. Compute final fitness score

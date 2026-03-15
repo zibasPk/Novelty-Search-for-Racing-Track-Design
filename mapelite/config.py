@@ -1,5 +1,6 @@
 # config.py
 
+import logging
 import os
 from enum import IntEnum
 
@@ -22,6 +23,7 @@ SOLUTION_DIM = POINTS_COUNT * 2 + MAX_SELECTED_CELLS * 2 + 1 + 1
 TRACK_SIZE_RANGE = (4, 10)  # (4, 10) for voronoi otherwise (100, 100)
 
 # --- QD Parameters ---
+DEFAULT_START_ITER = 0
 ITERATIONS = 1000
 RANDOM_POPULATION_ITERS = 100
 BATCH_SIZE = 10
@@ -47,6 +49,11 @@ GRIDPLOT_DIR = "gridplots/"
 STATS_FILENAME = "stats.pkl"
 BUFFER_FILENAME = "buffer.json"
 ELITES_FILENAME = "elites.json"
+
+# --- Logging ---
+LOG_DIR = "logs"
+LOG_CONSOLE_LEVEL = logging.INFO
+LOG_FILE_LEVEL = logging.DEBUG
 
 STATS_DIR = "stats/"
 BUFFER_DIR = "buffers/"
