@@ -130,7 +130,7 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, seed=None):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
@@ -140,9 +140,13 @@ class ArchiveVisualizer:
         self._umap_model = joblib.load(
             "mapelite/embeddings/models/model_metrics_VAE_latent32_umap.joblib")
         
-        self._grid_state = []
+        self._grid_state = grid_state if grid_state is not None else []
         self.prev_iteration_data = None
 
+    @property
+    def grid_state(self):
+        return self._grid_state
+    
     # -- track outline helper -------------------------------------------------
     def plot_grid(self, iteration_idx=None, substitutions=None, max_cols=15, max_sub_color=20,
               max_rows=None, save_dir=None):
@@ -220,8 +224,7 @@ class ArchiveVisualizer:
                 log.warning("Substituted solution not found in archive",
                             new_id=new_sol["id"])
             
-        #debug info
-        
+  
         archive_ids = [sol_dict["id"] for sol_dict in elites_dicts]
         substitutions_info = [(prev["id"], new["id"]) for prev, new in substitutions]
         grid_state_ids_sub_counts = [(item["elite"]["id"], item["sub_count"]) for item in self._grid_state]
@@ -338,11 +341,19 @@ class ArchiveVisualizer:
                     f"({total} / {max_rows * cols} buckets filled)")
 
         plt.tight_layout()
+        
+        # save grid_state_ids_sub_counts json for this iteration
+        
+        
         if save_dir:
             os.makedirs(save_dir, exist_ok=True)
             fig.savefig(os.path.join(save_dir, f"archive_grid_iter_{it_label:04d}.png"),
                         dpi=200, bbox_inches="tight")
             plt.close(fig)
+            
+            grid_save_path = os.path.join(save_dir, f"grid_state_ids_iter_{it_label:04d}.json")
+            with open(grid_save_path, "w") as f:
+                json.dump(grid_state_ids_sub_counts, f, indent=2)
         else:
             plt.show()
             plt.close(fig)
@@ -350,6 +361,7 @@ class ArchiveVisualizer:
         # Mark all entries as no longer new for the next call
         for item in self._grid_state:
             item["new"] = False
+        
         
     
     def _get_track_outline(self, sol_dict):
@@ -765,6 +777,7 @@ class QDRunner:
         centroids=None,
         initial_WSS=None,
         stats=None,
+        grid_state=None
     ):
         self.scheduler = scheduler
         self.archive = archive
@@ -792,7 +805,7 @@ class QDRunner:
         # Evaluation buffer & track cache
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
         self._visualizer = ArchiveVisualizer(
-            archive, self.stats, heatmap_dir, gridplot_dir, seed=seed)
+            archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state = grid_state)
         
     @classmethod
     def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
@@ -810,6 +823,7 @@ class QDRunner:
             seed = seed,
             centroids = getattr(state["archive"], "centroids", None),
             initial_WSS = state["stats"][0].get("initial_WSS", None),
+            grid_state = state["stats"][-1].get("grid_state", None)
         )
         
         return instance
@@ -986,7 +1000,7 @@ class QDRunner:
             emptystart = self.archive.stats.num_elites == 0
             if not emptystart:
                 occupied, challenged_data = self.archive.retrieve(measures_batch)
-                challenged_solutions = [array_to_solution(sol) for sol in challenged_data["solution"]]
+                challenged_solutions = [array_to_solution(sol) if occ else None for occ, sol in zip(occupied, challenged_data["solution"])]
             
             res = original_add(*args, **kwargs)
             
@@ -997,21 +1011,23 @@ class QDRunner:
 
             if not emptystart:
                 new_occupied, new_challenged_data = self.archive.retrieve(measures_batch)
-                new_challenged_solutions = [array_to_solution(sol) for sol in new_challenged_data["solution"]]
+                new_challenged_solutions = [array_to_solution(sol) if occ else None for occ, sol in zip(new_occupied, new_challenged_data["solution"])]
+                new_solutions = self.archive.data("solution")
+                new_ids = [array_to_solution(sol)["id"] for sol in new_solutions]
                 
                 for pos, solution in enumerate(solutions_batch):
-                    # if statuses[pos] == AddStatus.IMPROVE_EXISTING: 
+                        
                         if not occupied[pos]:
-                            log.warning("Status indicates improvement but cell was not occupied")
+                            if statuses[pos] == AddStatus.IMPROVE_EXISTING: 
+                                log.warning("Status indicates improvement but cell was not occupied")
                             continue
                         if not new_occupied[pos]:
-                            log.warning("Status indicates improvement but cell is no longer occupied after add")
+                            if statuses[pos] == AddStatus.IMPROVE_EXISTING: 
+                                log.warning("Status indicates improvement but cell is no longer occupied after add")
                             continue
                         
                         # It's possible the cell was improved but probably substituted again later in the batch
                         potentially_subbed = challenged_solutions[pos]["id"]
-                        new_solutions = self.archive.data("solution")
-                        new_ids = [array_to_solution(sol)["id"] for sol in new_solutions]
                         
                         if (potentially_subbed not in new_ids and new_challenged_solutions[pos]["id"] == array_to_solution(solution)["id"]):
                             old_sol = challenged_solutions[pos]
@@ -1124,7 +1140,9 @@ class QDRunner:
                 new_elites_count, sub_elites_count, len(sol_dicts))
             mean_pairwise_dist = self._compute_mean_pairwise_dist(measures)
             high_quality_cov = self._compute_high_quality_coverage(arch_scores)
-
+            
+            mean_knn_novelty = None
+            fitness_novelty_corr = None
             # NS-only metrics: k-NN novelty score and fitness–novelty correlation
             if self.centroids is None:
                 mean_knn_novelty = self._compute_mean_knn_novelty(measures)
@@ -1151,7 +1169,15 @@ class QDRunner:
 
             log.info("Stats updated", iteration=i, stats=self.stats[-1])
 
-            # ── Checkpoint ──
+            # its important to make sure it runs at least the first iteration
+            if i == 0 or new_elites_count > 0 or sub_elites_count > 0:
+                self._visualizer.plot_heatmap(i)
+                self._visualizer.plot_grid(i, substitutions)
+            
+            # Save plot_grid in stats
+            self.stats[-1]["grid_plot"] = self._visualizer.grid_state.copy()
+            
+            # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
                 ckpt_name = f"{self.checkpoint_dir}checkpoint_{i:04d}.pkl"
                 with open(ckpt_name, "wb") as f:
@@ -1165,10 +1191,6 @@ class QDRunner:
                 
                 self._evaluation_buffer.save()
 
-            # make sure it runs at least the first iteration
-            if i == 0 or new_elites_count > 0 or sub_elites_count > 0:
-                self._visualizer.plot_heatmap(i)
-                self._visualizer.plot_grid(i, substitutions)
 
         # Final save
         ckpt_name = f"{self.checkpoint_dir}checkpoint_{i:04d}.pkl"
