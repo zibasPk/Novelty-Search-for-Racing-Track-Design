@@ -17,7 +17,7 @@ from dash import Dash, html, dcc, callback, Input, Output, State, no_update, ctx
 import time
 
 API_URL = "http://localhost:4242/genforweb"
-MODE = "voronoi"
+MODE = "perlin"
 
 # Global cache to allow instantaneous single-track enlargement 
 # without needing to pass huge JSON strings back and forth through the browser.

@@ -10,7 +10,8 @@ from mapelite.config import (
     CHECKPOINT_EVERY,
     INVALID_SCORE,
     DEFAULT_START_ITER,
-    HEATMAP_DIR
+    HEATMAP_DIR,
+    EMBEDDING_MODEL_PATH
 )
 from mapelite.evaluator import EvaluatorMetrics
 from dask.distributed import Client, LocalCluster
@@ -130,15 +131,19 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS.npz"):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
         self.gridplot_dir = gridplot_dir
         self.seed = seed
         self._track_cache: dict = {}
-        self._umap_model = joblib.load(
-            "mapelite/embeddings/models/model_metrics_VAE_latent32_umap.joblib")
+        
+        embeddings = np.load(precomp_embeddings_path)["embeddings"]
+        umap_m = umap.UMAP(n_components=2, random_state=seed)
+        
+        self._umap_model = umap_m.fit(embeddings)
+        self._precomp_umaps = umap_m.transform(embeddings)
         
         self._grid_state = grid_state if grid_state is not None else []
         self.prev_iteration_data = None
@@ -304,7 +309,7 @@ class ArchiveVisualizer:
                     ys_n = (ys - ys.min()) / yspan
                     cell_xs = c - (0.5 - pad) + xs_n * (1.0 - 2 * pad)
                     cell_ys = r - (0.5 - pad) + ys_n * (1.0 - 2 * pad)
-                    track_color = "red" if is_new else "black"
+                    track_color = "blue" if is_new else "black"
                     track_lw = 0.9 if is_new else 0.4
                     ax.plot(cell_xs, cell_ys, color=track_color,
                             linewidth=track_lw, alpha=0.55, zorder=2)
@@ -401,63 +406,63 @@ class ArchiveVisualizer:
         if result is not None:
             self._track_cache[sol_id] = result
         return result
-
-    def print_elites(self):
-        """Prints the ids of current elites and their fitness scores."""
-        if self.archive is not None:
-            for i, (idx, sol) in enumerate(self.archive.iter_elites()):
-                log.debug(f"Elite {i}: ID={sol['id']}, Score={sol['score']}")
-
     
-    def plot_heatmap(self, iteration, save_dir=None, starting_size=((7.5, 11), (-2, 8.5))):
+    def plot_heatmap(self, iteration, save_dir=None):
         """2D UMAP compression of the archive's behavioural space, colored by fitness."""
-        # Min/max fitness for consistent coloring across iterations.  Adjust as needed.
         MAX_FIT = 60
         MIN_FIT = 0
-
         if save_dir is None:
             save_dir = self.heatmap_dir
-
         archive_data = self.archive.data()
         embeddings = archive_data["measures"]
         fitnesses = archive_data["objective"]
-
         min_samples = 16
         if len(embeddings) < min_samples:
             return
-
         solutions = archive_data["solution"]
         solution_dicts = [array_to_solution(sol) for sol in solutions]
-
         umap_compression = self._umap_model.transform(embeddings)
         fitnesses = np.asarray(fitnesses)
-
         cmap = plt.get_cmap("viridis").copy()
-        # Set out of range values to distinct colors: under=below MIN_FIT, over=above MAX_FIT
         cmap.set_under("deeppink")
         cmap.set_over("red")
-
         os.makedirs(save_dir, exist_ok=True)
         fig, ax = plt.subplots(figsize=(8, 6))
-
-        sc = ax.scatter(umap_compression[:, 0], umap_compression[:, 1],
-                        c=fitnesses, cmap=cmap, s=10, vmin=MIN_FIT, vmax=MAX_FIT)
+        # ── Background: full precomputed UMAP landscape ──────────────────────────
+        ax.scatter(
+            self._precomp_umaps[:, 0],
+            self._precomp_umaps[:, 1],
+            c="lightgray",
+            s=3,
+            alpha=0.30,
+            linewidths=0,
+            zorder=1,
+            label="All candidates",
+        )
+        # ── Foreground: current archive elites ───────────────────────────────────
+        sc = ax.scatter(
+            umap_compression[:, 0], umap_compression[:, 1],
+            c=fitnesses, cmap=cmap, s=10, vmin=MIN_FIT, vmax=MAX_FIT,
+            zorder=2,
+        )
         plt.colorbar(sc, ax=ax, label="Fitness", extend="both")
 
-        x_min = min(umap_compression[:, 0].min(), starting_size[0][0])
-        x_max = max(umap_compression[:, 0].max(), starting_size[0][1])
-        y_min = min(umap_compression[:, 1].min(), starting_size[1][0])
-        y_max = max(umap_compression[:, 1].max(), starting_size[1][1])
-
+        # ── Bounds: fit to _precomp_umaps, expanding if archive elites exceed them ─
+        x_min = min(self._precomp_umaps[:, 0].min(), umap_compression[:, 0].min())
+        x_max = max(self._precomp_umaps[:, 0].max(), umap_compression[:, 0].max())
+        y_min = min(self._precomp_umaps[:, 1].min(), umap_compression[:, 1].min())
+        y_max = max(self._precomp_umaps[:, 1].max(), umap_compression[:, 1].max())
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
 
+        # ── Title with iteration number ───────────────────────────────────────────
+        ax.set_title(f"Archive Heatmap — Iteration {iteration}")
+
         plt.tight_layout()
         fig.savefig(os.path.join(
-            save_dir, f"archive_heatmap_iter_{iteration}.png"))
+            save_dir, f"archive_heatmap_iter_{iteration:04d}.png"))
         plt.close(fig)
-
-        np.savez_compressed(os.path.join(save_dir, f"archive_data_iter_{iteration}.npz"),
+        np.savez_compressed(os.path.join(save_dir, f"archive_data_iter_{iteration:04d}.npz"),
                             umap=umap_compression, fitness=fitnesses, solutions=solution_dicts)
 
     # -- stats plot -----------------------------------------------------------
@@ -546,12 +551,12 @@ class ArchiveVisualizer:
                 "type": "line", "key": "acceptance_rate", "color": "tab:orange",
             },
             {
-                "title": "Mean Pairwise Distance (32-dim embedding)",
+                "title": "Mean Pairwise Distance",
                 "ylabel": "Mean Distance",
                 "type": "line", "key": "mean_pairwise_dist", "color": "tab:purple",
             },
             {
-                "title": "High-Quality Coverage (fitness \u2265 30)",
+                "title": "High-Quality Coverage",
                 "ylabel": "Count",
                 "type": "line", "key": "high_quality_coverage", "color": "darkred",
             },
@@ -663,9 +668,12 @@ class ArchiveVisualizer:
 
     # -- elite export ---------------------------------------------------------
 
-    def export_elites(self, output_path, algorithm_label, seed,
-                      global_best_score, global_best_id):
+    def export_elites(self, output_path, algorithm_label, seed):
         """Save all valid elites to a JSON file for reconstruction & visualization."""
+        
+        global_best_score = self.stats[-1]["global_best_score"]
+        global_best_id = self.stats[-1]["global_best_id"]
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
         data_archive = self.archive.data()
@@ -1175,7 +1183,7 @@ class QDRunner:
                 self._visualizer.plot_grid(i, substitutions)
             
             # Save plot_grid in stats
-            self.stats[-1]["grid_plot"] = self._visualizer.grid_state.copy()
+            self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
             
             # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
