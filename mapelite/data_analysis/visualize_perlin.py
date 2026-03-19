@@ -55,8 +55,8 @@ def build_figure(data_list, cols=6):
     # We remove standard subplot_titles so we can add them as clickable plot traces
     fig = make_subplots(
         rows=rows, cols=cols,
-        horizontal_spacing=0.02,
-        vertical_spacing=0.04,
+        horizontal_spacing=0.006,
+        vertical_spacing=0.02,
     )
 
     for idx, (seed, data) in enumerate(data_list):
@@ -145,6 +145,7 @@ def build_figure(data_list, cols=6):
     for i in range(1, n + 1):
         xax = f"xaxis{i}" if i > 1 else "xaxis"
         yax = f"yaxis{i}" if i > 1 else "yaxis"
+        xref = f"x{i}" if i > 1 else "x"
         fig.layout[xax].update(
             range=[bbox["xl"], bbox["xr"]],
             showticklabels=False, showgrid=False, zeroline=False,
@@ -153,10 +154,13 @@ def build_figure(data_list, cols=6):
         fig.layout[yax].update(
             range=[bbox["yb"], bbox["yt"]],
             showticklabels=False, showgrid=False, zeroline=False,
+            scaleanchor=xref,
+            scaleratio=1,
+            constrain="domain"
         )
 
     fig.update_layout(
-        height=max(1, rows) * 250,
+        height=max(1, rows) * 300,
         margin=dict(l=10, r=10, t=40, b=10),
         paper_bgcolor="white", plot_bgcolor="white",
         clickmode="event"
