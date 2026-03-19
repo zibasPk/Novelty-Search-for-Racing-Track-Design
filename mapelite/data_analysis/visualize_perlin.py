@@ -11,17 +11,24 @@ Requires the track generation API running on localhost:4242.
 import requests
 import numpy as np
 import math
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from dash import Dash, html, dcc, callback, Input, Output, State, no_update, ctx
+from dash.exceptions import PreventUpdate
 import time
 
 API_URL = "http://localhost:4242/genforweb"
-MODE = "perlin"
+MODE = "voronoi"
+RNG_MODE_PERLIN = 1
 
 # Global cache to allow instantaneous single-track enlargement 
 # without needing to pass huge JSON strings back and forth through the browser.
 TRACK_CACHE = {}
+LAST_DATA_LIST = []
+LAST_GENERATION_LABEL = ""
 
 def generate_track(seed, perlin_params, track_size=None):
     if track_size is None:
@@ -32,6 +39,7 @@ def generate_track(seed, perlin_params, track_size=None):
         "mode": MODE,
         "trackSize": track_size,
         "perlin_parameters": perlin_params,
+        "rngMode": RNG_MODE_PERLIN,
     }, timeout=30)
     resp.raise_for_status()
     return resp.json()
@@ -140,7 +148,7 @@ def build_figure(data_list, cols=6):
         fig.layout[xax].update(
             range=[bbox["xl"], bbox["xr"]],
             showticklabels=False, showgrid=False, zeroline=False,
-            scaleanchor=yax.replace("axis", ""),
+            constrain="domain",
         )
         fig.layout[yax].update(
             range=[bbox["yb"], bbox["yt"]],
@@ -214,6 +222,87 @@ def build_single_figure(seed, data):
     return fig
 
 
+def render_tracks_matplotlib_png(data_list, title_text, cols=6):
+    n = len(data_list)
+    if n == 0:
+        raise ValueError("No tracks to render")
+
+    if n < cols:
+        cols = n
+    rows = max(1, math.ceil(n / cols))
+
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.1, rows * 2.1), dpi=180)
+    if rows == 1 and cols == 1:
+        axes = np.array([[axes]])
+    elif rows == 1:
+        axes = np.array([axes])
+    elif cols == 1:
+        axes = np.array([[ax] for ax in axes])
+
+    for idx in range(rows * cols):
+        r = idx // cols
+        c = idx % cols
+        ax = axes[r][c]
+
+        if idx >= n:
+            ax.axis("off")
+            continue
+
+        seed, data = data_list[idx]
+        ax.set_xlim(0, 600)
+        ax.set_ylim(600, 0)
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        if data is None:
+            ax.text(300, 30, f"#{seed}", ha="center", va="center", color="#2196F3", fontsize=9, fontweight="bold")
+            ax.text(300, 300, "ERR", ha="center", va="center", color="red", fontsize=13)
+            continue
+
+        gen = data["generator"]
+        track = data["track"]
+
+        ax.text(300, 30, f"#{seed}", ha="center", va="center", color="#2196F3", fontsize=9, fontweight="bold")
+
+        ex, ey = [], []
+        for e in gen["diagram"]["edges"]:
+            ex += [e["va"]["x"], e["vb"]["x"], np.nan]
+            ey += [e["va"]["y"], e["vb"]["y"], np.nan]
+        if ex:
+            ax.plot(ex, ey, color="#dddddd", linewidth=0.5)
+
+        ds = gen["dataSet"]
+        if ds:
+            ax.scatter([p["x"] for p in ds], [p["y"] for p in ds], s=4, c="steelblue", alpha=0.6, linewidths=0)
+
+        for cell in gen["selectedCells"]:
+            site = cell["site"]
+            pts = []
+            for he in cell["halfedges"]:
+                edge = he["edge"]
+                ls = edge.get("lSite")
+                if ls and ls["x"] == site["x"] and ls["y"] == site["y"]:
+                    pts.append((edge["va"]["x"], edge["va"]["y"]))
+                else:
+                    pts.append((edge["vb"]["x"], edge["vb"]["y"]))
+            if pts:
+                poly = plt.Polygon(pts, closed=True, facecolor=(1.0, 0.647, 0.0, 0.12), edgecolor="none")
+                ax.add_patch(poly)
+
+        tx = [p["x"] for p in track] + [track[0]["x"]]
+        ty = [p["y"] for p in track] + [track[0]["y"]]
+        ax.plot(tx, ty, color="crimson", linewidth=1.5)
+
+    if title_text:
+        fig.suptitle(title_text, fontsize=10)
+    fig.patch.set_facecolor("white")
+    plt.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.93 if title_text else 0.99, wspace=0.06, hspace=0.12)
+    return fig
+
+
 # ── App ───────────────────────────────────────────────────────
 
 # Ensure prevent_initial_callbacks ignores any lingering dynamic errors
@@ -281,7 +370,17 @@ app.layout = html.Div([
                                 "cursor": "pointer", "backgroundColor": "#2196F3",
                                 "color": "white", "border": "none", "borderRadius": "4px"}),
         ], style={"padding": "0 8px", "display": "flex", "alignItems": "end"}),
+
+        html.Div([
+            html.Br(),
+            html.Button("Save PNG", id="btn-save-png", n_clicks=0,
+                         style={"padding": "8px 24px", "fontSize": "1rem",
+                                "cursor": "pointer", "backgroundColor": "#4CAF50",
+                                "color": "white", "border": "none", "borderRadius": "4px"}),
+        ], style={"padding": "0 8px", "display": "flex", "alignItems": "end"}),
     ], style={"display": "flex", "padding": "8px", "alignItems": "end", "flexWrap": "wrap", "gap": "4px"}),
+
+    dcc.Download(id="download-tracks-png"),
 
     # We now place the main-graph directly in the layout, hidden until generated.
     dcc.Loading(
@@ -343,7 +442,7 @@ def on_generate(n, feat, bias, power, tsize, num_seeds, offset, min_dist_scale):
     offset = int(offset or 0)
     seeds = list(range(offset, offset + num_seeds))
 
-    global TRACK_CACHE
+    global TRACK_CACHE, LAST_DATA_LIST, LAST_GENERATION_LABEL
     TRACK_CACHE.clear()
 
     data_list, ok = [], 0
@@ -359,7 +458,17 @@ def on_generate(n, feat, bias, power, tsize, num_seeds, offset, min_dist_scale):
     elapsed = time.time() - t0
 
     fig = build_figure(data_list)
-    label = f"feat={params['NOISE_FREQUENCY']:.0f}  bias={params['densityThreshold']:.2f}  pow={params['densityExponent']:.1f}"
+    size_label = "random(4-10)" if tsize is None else str(tsize)
+    label = (
+        f"freq={params['NOISE_FREQUENCY']:.2f}  "
+        f"threshold={params['densityThreshold']:.2f}  "
+        f"exp={params['densityExponent']:.2f}  "
+        f"minDist={params['minDistScale']:.2f}  "
+        f"trackSize={size_label}  "
+        f"seeds={offset}-{offset + num_seeds - 1}"
+    )
+    LAST_DATA_LIST = data_list
+    LAST_GENERATION_LABEL = f"{label}   ({ok}/{num_seeds} ok, {elapsed:.1f}s)"
     fig.update_layout(title=dict(
         text=f"{label}   ({ok}/{num_seeds} ok, {elapsed:.1f}s) — <b>Click on a track or its name to enlarge</b>",
         font=dict(size=13),
@@ -367,6 +476,25 @@ def on_generate(n, feat, bias, power, tsize, num_seeds, offset, min_dist_scale):
 
     # Return the figure AND a style dict to un-hide the graph on the frontend
     return fig, {"width": "100%", "display": "block"}
+
+
+@callback(
+    Output("download-tracks-png", "data"),
+    Input("btn-save-png", "n_clicks"),
+    prevent_initial_call=True,
+)
+def save_tracks_png_matplotlib(n_clicks):
+    if not n_clicks:
+        raise PreventUpdate
+    if not LAST_DATA_LIST:
+        raise PreventUpdate
+
+    def _writer(bytes_io):
+        fig = render_tracks_matplotlib_png(LAST_DATA_LIST, LAST_GENERATION_LABEL, cols=6)
+        fig.savefig(bytes_io, format="png", dpi=180, facecolor="white")
+        plt.close(fig)
+
+    return dcc.send_bytes(_writer, "perlin_tracks_matplotlib.png")
 
 
 @callback(
