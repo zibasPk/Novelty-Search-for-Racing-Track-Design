@@ -11,7 +11,8 @@ from mapelite.config import (
     INVALID_SCORE,
     DEFAULT_START_ITER,
     HEATMAP_DIR,
-    EMBEDDING_MODEL_PATH
+    EMBEDDING_MODEL_PATH,
+    PRECOMPILED_EMBEDDINGS_PATH
 )
 from mapelite.evaluator import EvaluatorMetrics
 from dask.distributed import Client, LocalCluster
@@ -131,7 +132,7 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS.npz"):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
@@ -856,13 +857,9 @@ class QDRunner:
         return client, cluster, evaluator_future
 
     @staticmethod
-    def get_state_from_checkpoint(checkpoint_dir, stats_path):
-        """Try to restore scheduler & stats from the latest checkpoint.
-
-        Returns a dict with keys: ``scheduler``, ``archive``, ``start_iter``,
-        ``global_best_score``, ``global_best_id``, ``stats``.
-        ``scheduler`` / ``archive`` are *None* when no checkpoint was found.
-        """
+    def get_state_from_checkpoint(checkpoint_dir):
+        """Check for existing checkpoints and return the latest state if found."""
+        
         checkpoints = sorted(glob.glob(f"{checkpoint_dir}checkpoint_*.pkl"))
 
         scheduler = None

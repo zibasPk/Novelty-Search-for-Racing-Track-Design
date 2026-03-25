@@ -41,6 +41,7 @@ DEBUG_MUTATION = True
 
 # --- Directories ---
 EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng.pth"
+PRECOMPILED_EMBEDDINGS_PATH = "mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS.npz"
 CVT_DIR = "data/cvt/"
 NS_DIR = "data/ns/"
 CHECKPOINT_DIR = "checkpoints/"
