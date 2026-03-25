@@ -17,7 +17,7 @@ if mapelite_path not in sys.path:
     sys.path.append(mapelite_path)
     print(f"Added '{mapelite_path}' to sys.path")
 
-import utils
+import mapelite.utils as utils
 
 
 def create_flattened_dataset(source_folder, output_file, max_files=None):

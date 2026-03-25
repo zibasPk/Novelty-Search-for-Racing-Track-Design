@@ -6,7 +6,7 @@ import random
 import joblib
 import os
 
-from config import (
+from mapelite.config import (
     BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE, RngMode
 )
 

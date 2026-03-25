@@ -7,9 +7,9 @@ from mapelite.logging_config import get_logger
 import torch
 
 from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
-from utils import EMBEDDING_MODEL, pca_align, solution_to_array, is_valid_solution_array
+from mapelite.utils import EMBEDDING_MODEL, pca_align, solution_to_array, is_valid_solution_array
 from abc import ABC, abstractmethod
-from config import (
+from mapelite.config import (
     BASE_URL, INVALID_SCORE
 )
 

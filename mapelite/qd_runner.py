@@ -2,7 +2,7 @@
 # Shared infrastructure for Quality-Diversity search loops.
 # Both novelty_search.ipynb and CVT_mapelite.ipynb delegate to these classes.
 
-from utils import array_to_solution
+from mapelite.utils import array_to_solution
 from mapelite.config import (
     BASE_URL,
     BATCH_SIZE,
