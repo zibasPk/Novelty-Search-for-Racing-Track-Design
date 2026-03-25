@@ -20,7 +20,7 @@ class Evaluator(ABC):
     """Abstract base class for solution evaluators."""
     @abstractmethod
     def evaluate(self, sol):
-        """Evaluates a solution and returns (id, ok, msg, fitness_score, descriptor)."""
+        """Evaluates a solution and returns (id, ok, msg, fitness_score, measure)."""
         pass
 
     def fitness_formula(self, fit):
@@ -46,12 +46,12 @@ class EvaluatorMAPElite(Evaluator):
 
             class PlaceholderUMAP:
                 def transform(self, data):
-                    # Returns a dummy 2D descriptor
+                    # Returns a dummy 2D measure
                     return np.zeros((data.shape[0], 2))
             self.embedding_model = PlaceholderUMAP()
 
-    def descriptor_from_track(self, sol):
-        """Converts the track's spline vector into the 2D behavioral descriptor using UMAP."""
+    def measure_from_track(self, sol):
+        """Converts the track's spline vector into the 2D behavioral measure using UMAP."""
         # The 'splineVector' is assumed to be part of the evaluation JSON response
         pts = np.array([[p["x"], p["y"]]
                        for p in sol.get("splineVector", [])], dtype=float)
@@ -69,11 +69,11 @@ class EvaluatorMAPElite(Evaluator):
     """Evaluator implementation for MAP-Elites."""
 
     def evaluate(self, sol):
-        """Submits a solution to the external API for evaluation and computes descriptor/fitness."""
+        """Submits a solution to the external API for evaluation and computes measure/fitness."""
         sol_id = sol.get("id", 0)
         ok = True
         msg = ""
-        desc = np.zeros((2,))  # Default descriptor
+        measure = np.zeros((2,))  # Default measure
         fit_score = INVALID_SCORE
 
         try:
@@ -83,9 +83,9 @@ class EvaluatorMAPElite(Evaluator):
             if not r.ok:
                 raise Exception(f"API error {r.status_code}: {r_json.get('error', r.text)}")
 
-            # 2. Extract raw fitness metrics and compute descriptor
+            # 2. Extract raw fitness metrics and compute measure
             fit = r_json.get("fitness", {})
-            desc = self.descriptor_from_track(r_json)
+            measure = self.measure_from_track(r_json)
 
             # 3. Compute final fitness score
             fit_score = self.fitness_formula(fit)
@@ -94,7 +94,7 @@ class EvaluatorMAPElite(Evaluator):
             ok = False
             msg = str(e)
 
-        return sol_id, ok, msg, fit_score, desc
+        return sol_id, ok, msg, fit_score, measure
 
 
 class EvaluatorMetrics(Evaluator):
@@ -114,7 +114,7 @@ class EvaluatorMetrics(Evaluator):
         
         return cls(embedding_model, embedding_dim, device)
 
-    def descriptor_from_metrics(self, metrics):
+    def measure_from_metrics(self, metrics):
         metrics = np.array(metrics, dtype=np.float32)
         metrics = self.preprocessor(metrics)
         data_tensor = torch.tensor(metrics, dtype=torch.float32).unsqueeze(0).to(self.device)
@@ -128,11 +128,11 @@ class EvaluatorMetrics(Evaluator):
         sol_id = sol.get("id", 0)
         ok = True
         msg = ""
-        desc = np.zeros((self.embedding_dim,))  # Default descriptor
+        measure = np.zeros((self.embedding_dim,))  # Default measure
         fit_score = INVALID_SCORE
         
         if not is_valid_solution_array(solution_to_array(sol)):
-            return sol_id, False, "Invalid solution array", fit_score, desc
+            return sol_id, False, "Invalid solution array", fit_score, measure
 
         try:
             # 1. Send solution for evaluation
@@ -145,7 +145,7 @@ class EvaluatorMetrics(Evaluator):
             fit = r_json.get("fitness", {})
             log.debug("Raw fitness metrics", sol_id=sol_id, metrics=fit)
             
-            desc = self.descriptor_from_metrics(fit.get("embedding_data", []))
+            measure = self.measure_from_metrics(fit.get("embedding_data", []))
             # 3. Compute final fitness score
             fit_score = self.fitness_formula(fit)
 
@@ -153,4 +153,4 @@ class EvaluatorMetrics(Evaluator):
             ok = False
             msg = str(e)
 
-        return sol_id, ok, msg, fit_score, desc
+        return sol_id, ok, msg, fit_score, measure

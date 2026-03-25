@@ -19,7 +19,7 @@ except FileNotFoundError:
     # Placeholder class to prevent crash if model isn't trained/found
     class PlaceholderUMAP:
         def transform(self, data):
-            # Returns a dummy 2D descriptor
+            # Returns a dummy 2D measure
             return np.zeros((data.shape[0], 2))
     EMBEDDING_MODEL = PlaceholderUMAP()
 
