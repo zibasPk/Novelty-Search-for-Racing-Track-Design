@@ -29,7 +29,7 @@ export class VoronoiTrackGenerator {
       case RngMode.UNIFORM:
         return this.uniformPointGen();
       default:
-        log.warn`Unknown genType "${genType}", defaulting to uniform point generation.`;
+        log.warn(`Unknown genType "${genType}", defaulting to uniform point generation.`);
         return this.uniformPointGen();
     }
   }

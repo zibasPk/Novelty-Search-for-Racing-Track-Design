@@ -81,7 +81,7 @@ def create_voronoi_dataset(input_folder, output_filename):
 
 if __name__ == "__main__":
     # Configuration
-    INPUT_DIR = os.path.join("data", "voronoi", "fitted")
-    OUTPUT_FILE = os.path.join("mapelite", "embeddings", "datasets", "fitness_dict_mixedRng.npz")
+    INPUT_DIR = os.path.join("data","Archive", "voronoi final mixed with new bot tita", "fitted")
+    OUTPUT_FILE = os.path.join("mapelite", "embeddings", "datasets", "fitness_dict_mixedRng_tita.npz")
 
     create_voronoi_dataset(INPUT_DIR, OUTPUT_FILE)

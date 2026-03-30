@@ -158,8 +158,8 @@ def launch_and_record(command, output_filename, duration=10, fps=45.0):
 
 
 
-xmlDirectory = "data/voronoi/xmlTracks/"
-videoDirectory = "data/voronoi/videos/"
+xmlDirectory = "data/Archive/voronoi final mixed with new bot tita/xmlTracks/"
+videoDirectory = "data/videos/"
 ps_script_path  = "src/utils/generateoutput.ps1"
 
 # choose one randomly from the tracks in the xmlTracks folder
@@ -192,5 +192,5 @@ for i in range(25):
   launch_and_record(
         command=["C:\\Program Files (x86)\\torcs\\wtorcs.exe"], 
         output_filename= videoDirectory + randomFile.replace('.xml', '.mp4'), 
-        duration=240
+        duration=300
     )  

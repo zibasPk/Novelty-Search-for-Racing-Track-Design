@@ -268,11 +268,11 @@ def load_model(path, device):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate Track Embeddings from VAE with Dimensionality Reduction")
-    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng.npz", 
+    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng.pth", 
+    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_1.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="mapelite/embeddings/datasets/embeddings/track_embeddings_metrics_latent_32_rngMixDS.npz", 
+    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_1.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")
