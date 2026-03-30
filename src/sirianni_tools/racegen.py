@@ -8,9 +8,10 @@ __email__ = "jacopo.sirianni@mail.polimi.it"
 import os
 
 # Fixed bot configuration - these are always used for racing
+# When chaning these watch out for the bot idx, some times the one in the UI wont be correct, so you'll need to check the one in the race xml generated in Local\torcs\config\raceman 
 RACING_BOTS = [
-    ("lliaw", "7"),
-    ("olethros", "2"),
+    ("lliaw", "3"),
+    ("berniw", "3"),
     ("tita", "4"),
     ("inferno", "6")
 ]
