@@ -150,15 +150,15 @@ app.post('/evaluate', async (req, res) => {
     const { id, mode, dataSet, selectedCells, rngMode } = req.body;
 
     const sel = safeArray(selectedCells);
-    const simulationResult = await simulate(
+    const simulationResult = await simulate({
       mode,
-      sel.length,
+      trackSize: sel.length,
       dataSet,
-      sel,
-      id,
-      JSON_DEBUG,
-      false,
-      rngMode
+      selected: sel,
+      seed: id,
+      saveJson: JSON_DEBUG,
+      plot:false,
+      rngMode}
     );
 
     res.json({

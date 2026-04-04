@@ -25,7 +25,16 @@ async function runSimulation(simulationIndex) {
     const trackSize = simulationIndex % 7 + 4; // This will cycle through values from 4 to 10
     let rngMode = seed % 2 === 0 ? RngMode.UNIFORM : RngMode.PERLIN; // Alternate between 'uniform' and 'perlin' RNG modes
     // Run the simulation
-    const { fitness } = await simulate(mode, trackSize, [], [], seed, JSON_DEBUG, false, rngMode);
+    const { fitness } = await simulate({
+      mode,
+      trackSize,
+      selected: [],
+      dataSet: [],
+      seed,
+      saveJson: JSON_DEBUG,
+      plot: false,
+      rngMode
+    });
 
     log.trace(`fitness: ${JSON.stringify(fitness)}`);
     let endTime = Date.now();

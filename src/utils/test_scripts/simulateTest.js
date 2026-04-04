@@ -36,4 +36,11 @@ const filePath = jsonDir + filename;
 const data = await fs.readFile(filePath, 'utf-8');
 const trackData = JSON.parse(data);
 
-const { fitness } = await simulate("voronoi", trackData.selectedCells.length, trackData.dataSet, trackData.selectedCells, '776.6840486022929', JSON_DEBUG);
+const { fitness } = await simulate({
+  mode: "voronoi",
+  trackSize: trackData.selectedCells.length,
+  dataSet: trackData.dataSet,
+  selected: trackData.selectedCells,
+  seed: '776.6840486022929',
+  saveJson: JSON_DEBUG
+});

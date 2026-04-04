@@ -34,7 +34,7 @@ const executeCommand = (command) => {
 };
 
 export async function simulate(
-  mode = MODE,
+ { mode = MODE,
   trackSize = 0,
   dataSet = [],
   selected = [],
@@ -42,6 +42,7 @@ export async function simulate(
   saveJson = false,
   plot = false,
   rngMode,
+} = {}
 ) {
   if (isNaN(trackSize)) {
     if (mode === 'voronoi') {
