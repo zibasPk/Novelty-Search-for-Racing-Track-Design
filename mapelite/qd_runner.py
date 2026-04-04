@@ -79,7 +79,7 @@ class EvaluationBuffer:
 
     # -- recording ------------------------------------------------------------
 
-    def record(self, sol_id, sol_dict: dict, embedding, score: float, ok: bool):
+    def record(self, sol_id, sol_dict: dict, measure, score: float, ok: bool, phenotype_data=None):
         """Record a single evaluated track.
 
         Parameters
@@ -90,8 +90,8 @@ class EvaluationBuffer:
             Solution dictionary produced by ``array_to_solution`` containing
             ``dataSet`` and ``selectedCells`` (the data needed to reconstruct
             the spline).
-        embedding : array-like
-            Behavioural descriptor / embedding vector.
+        measure : array-like
+            Behavioural descriptor (measure) / embedding vector.
         score : float
             Fitness score returned by the evaluator.
         ok : bool
@@ -103,9 +103,10 @@ class EvaluationBuffer:
             "selectedCells": sol_dict.get("selectedCells", []),
             "mode": sol_dict.get("mode", ""),
             "rngMode": sol_dict.get("rngMode", "uniform"),
-            "embedding": np.asarray(embedding).tolist(),
+            "measure": np.asarray(measure).tolist(),
             "score": float(score),
             "valid": ok,
+            "phenotype_data": phenotype_data,
         }
         self.entries.append(entry)
 
@@ -1077,7 +1078,7 @@ class QDRunner:
 
             score_list, clean_solutions = [], []
             # Measure is the embedding returned by the evaluator
-            for (sol_id, ok, msg, objective_score, measure), sol_dict in zip(gathered, sol_dicts):
+            for (sol_id, ok, msg, objective_score, measure, phenotype_data), sol_dict in zip(gathered, sol_dicts):
 
                 if not ok:
                     log.warning("Clamping bad score",
@@ -1091,7 +1092,7 @@ class QDRunner:
                         self.global_best_id = sol_id
 
                 self._evaluation_buffer.record(
-                    sol_id, sol_dict, measure, objective_score, ok)
+                    sol_id, sol_dict, measure, objective_score, ok, phenotype_data)
                 clean_solutions.append((objective_score, measure))
                 score_list.append(objective_score)
 
