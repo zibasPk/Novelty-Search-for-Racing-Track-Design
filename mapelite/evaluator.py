@@ -103,6 +103,9 @@ class EvaluatorMetrics(Evaluator):
         self.embedding_dim = embedding_dim
         self.device = device
         self.preprocessor = MetricsPreprocessor()
+        # Set the model to evaluation mode
+        self.embedding_model.eval()
+
         
     @classmethod
     def load_pretrained(cls, path):
@@ -119,6 +122,7 @@ class EvaluatorMetrics(Evaluator):
         metrics = self.preprocessor(metrics)
         data_tensor = torch.tensor(metrics, dtype=torch.float32).unsqueeze(0).to(self.device)
 
+        
         with torch.no_grad():
             mu, var = self.embedding_model.encode(data_tensor, None)
 

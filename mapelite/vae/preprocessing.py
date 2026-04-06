@@ -22,6 +22,7 @@ class MetricsPreprocessor:
     STEERING_THRESHOLD = 0.05
 
     # Columns to drop: id (0), accel (3), brake (4), gear (5)
+    # columns to keep: speed (1), steering (2), distanceToBorder (6)
     DROP_COLS = [0, 3, 4, 5]
 
     def __call__(self, input_data: np.ndarray) -> np.ndarray:
