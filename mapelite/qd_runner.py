@@ -1144,6 +1144,7 @@ class QDRunner:
             
             mean_knn_novelty = None
             fitness_novelty_corr = None
+            wss = None
             
             match self._run_mode:
                 case RunMode.CVT:
