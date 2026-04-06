@@ -22,7 +22,6 @@ def get_trace(folder, track_name, traced_column_idx, consider_laps = [2]):
     """
     
     cols = dynamicsLogColumns
-    
     trace = []
     
     try:

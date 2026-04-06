@@ -239,6 +239,7 @@ def main():
     should_run_benchmark = args.target_duration is not None or args.track_embedding or args.trace
     
     if should_run_benchmark:
+        clear_logs() 
         try:
             run_benchmark_sim(folder_name)
         except subprocess.CalledProcessError as e:

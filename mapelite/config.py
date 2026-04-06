@@ -8,6 +8,10 @@ from enum import IntEnum
 class RngMode(IntEnum):
     UNIFORM = 0
     PERLIN = 1
+    
+class RunMode(IntEnum):
+    CVT = 0
+    NS = 1
 
 
 # --- General Setup ---

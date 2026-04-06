@@ -12,7 +12,8 @@ from mapelite.config import (
     DEFAULT_START_ITER,
     HEATMAP_DIR,
     EMBEDDING_MODEL_PATH,
-    PRECOMPILED_EMBEDDINGS_PATH
+    PRECOMPILED_EMBEDDINGS_PATH,
+    RunMode
 )
 from mapelite.evaluator import EvaluatorMetrics
 from dask.distributed import Client, LocalCluster
@@ -817,6 +818,8 @@ class QDRunner:
         self._visualizer = ArchiveVisualizer(
             archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state = grid_state)
         
+        self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
+        
     @classmethod
     def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
         instance = cls(
@@ -922,7 +925,7 @@ class QDRunner:
             return float("nan")
 
         embeddings = np.array(
-            [e["embedding"] for e in self._evaluation_buffer.entries],
+            [e["measure"] for e in self._evaluation_buffer.entries],
             dtype=float,
         )  # (N, D)
         centroids = np.asarray(centroids, dtype=float)  # (K, D)
@@ -1131,30 +1134,27 @@ class QDRunner:
                 best=f"{best_val:.2f}",
             )
 
-            # ── WSS ──
+            # ── Compute metrics ──
             measures = data_archive["measures"]
-            if self.centroids is not None:
-                # CVT: fixed centroids supplied at construction time
-                wss_centroids = self.centroids
-            else:
-                # NS: use the inserted elites currently in the archive
-                wss_centroids = measures if len(measures) > 0 else None
-
-            wss = self._compute_wss(wss_centroids)
+            
             qd_score = self._compute_qd_score(arch_scores)
-            acceptance_rate = self._compute_acceptance_rate(
-                new_elites_count, sub_elites_count, len(sol_dicts))
+            acceptance_rate = self._compute_acceptance_rate(new_elites_count, sub_elites_count, len(sol_dicts))
             mean_pairwise_dist = self._compute_mean_pairwise_dist(measures)
             high_quality_cov = self._compute_high_quality_coverage(arch_scores)
             
             mean_knn_novelty = None
             fitness_novelty_corr = None
-            # NS-only metrics: k-NN novelty score and fitness–novelty correlation
-            if self.centroids is None:
-                mean_knn_novelty = self._compute_mean_knn_novelty(measures)
-                fitness_novelty_corr = self._compute_fitness_novelty_corr(
-                    measures, arch_scores)
-                
+            
+            match self._run_mode:
+                case RunMode.CVT:
+                    wss = self._compute_wss(self.centroids) 
+                case RunMode.NS:
+                    mean_knn_novelty = self._compute_mean_knn_novelty(measures)
+                    fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_scores)
+                case _:
+                    log.warning("Unknown run mode: ", mode=self._run_mode)
+            
+            
             self.stats.append({
                 "iteration": i,
                 "initial_WSS": self.initial_WSS,
