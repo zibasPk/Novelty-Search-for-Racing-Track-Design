@@ -147,10 +147,12 @@ app.post('/reconstruct', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/evaluate', async (req, res) => {
   try {
-    const { id, mode, dataSet, selectedCells, rngMode } = req.body;
+    const { id, mode, dataSet, selectedCells, rngMode, getTraces} = req.body;
 
     const sel = safeArray(selectedCells);
-    const simulationResult = await simulate({
+
+
+    const params = {
       mode,
       trackSize: sel.length,
       dataSet,
@@ -158,8 +160,14 @@ app.post('/evaluate', async (req, res) => {
       seed: id,
       saveJson: JSON_DEBUG,
       plot:false,
-      rngMode}
-    );
+      rngMode,
+    }
+    if (getTraces) {
+      params.getTraces = true;
+    }
+    
+
+    const simulationResult = await simulate(params);
 
     res.json({
       fitness: simulationResult.fitness,
