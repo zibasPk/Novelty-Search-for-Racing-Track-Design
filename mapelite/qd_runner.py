@@ -32,6 +32,7 @@ import requests
 from mapelite.logging_config import get_logger
 from contextlib import contextmanager
 from sklearn.neighbors import NearestNeighbors
+from collections import defaultdict
 
 log = get_logger(__name__)
 
@@ -201,15 +202,38 @@ class ArchiveVisualizer:
                     "fitness": id_to_fitness.get(elite["id"], np.nan)
                 })
                 
-        # Apply substitutions in-place, preserving grid position
+        # Apply substitutions, in-place preserving grid position when possible
+        subs_by_id = defaultdict(list)
         for prev_sol, new_sol in substitutions:
-            for item in self._grid_state:
-                if item["elite"]["id"] == prev_sol["id"]:
-                    item["elite"] = new_sol
-                    item["sub_count"] += 1
-                    item["new"] = True
-                    item["fitness"] = id_to_fitness.get(new_sol["id"], np.nan)
-                    break
+            if new_sol["id"] == 3.2919232767901017:
+                print(f"Found solution with ID {new_sol['id']} in substitution check")
+            subs_by_id[prev_sol["id"]].append(new_sol)
+
+        items_to_add = []
+        for item in self._grid_state:
+            new_sols = subs_by_id.pop(item["elite"]["id"], None)
+            if new_sols is None:
+                continue
+
+            item_snapshot = item.copy()  # snapshot before mutating, for appended copies
+
+            # First substitution: update in place
+            item["elite"]   = new_sols[0]
+            item["sub_count"] += 1
+            item["new"]     = True
+            item["fitness"] = id_to_fitness.get(new_sols[0]["id"], np.nan)
+
+            # Remaining substitutions: append copies of the original slot
+            for new_sol in new_sols[1:]:
+                new_item = item_snapshot.copy()
+                new_item["elite"]     = new_sol
+                new_item["sub_count"] += 1
+                new_item["new"]       = True
+                new_item["fitness"]   = id_to_fitness.get(new_sol["id"], np.nan)
+                items_to_add.append(new_item)
+
+        self._grid_state.extend(items_to_add)  
+        
 
         if len(self._grid_state) == 0:
             return
@@ -351,7 +375,6 @@ class ArchiveVisualizer:
         plt.tight_layout()
         
         # save grid_state_ids_sub_counts json for this iteration
-        
         
         if save_dir:
             os.makedirs(save_dir, exist_ok=True)
@@ -810,8 +833,8 @@ class QDRunner:
             centroids) if centroids is not None else None
         self.initial_WSS = initial_WSS
         # Mutable run state
-        self.global_best_score = INVALID_SCORE
-        self.global_best_id = None
+        self.global_best_score = stats[0].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
+        self.global_best_id = stats[0].get("global_best_id") if stats else None
         
         # Evaluation buffer & track cache
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
@@ -999,58 +1022,108 @@ class QDRunner:
 
     @contextmanager
     def _track_add_status(self):
+        AddStatus_counts = {AddStatus.NEW: 0, AddStatus.IMPROVE_EXISTING: 0}
         counts = {"new": 0, "improved": 0}
         substitutions = []  # (old_id, new_id)
+        new_insertions = []  # (new_id)
         original_add = self.archive.add
 
         def tracked_add(*args, **kwargs):
             solutions_batch, measures_batch = kwargs.get("solution"), kwargs.get("measures")
-            
+            solutions_batch_dicts = [array_to_solution(sol) for sol in solutions_batch]
             emptystart = self.archive.stats.num_elites == 0
+            
+            self_pre_archive_dicts_set = {array_to_solution(sol)["id"]: array_to_solution(sol) for sol in self.archive.data("solution")}
+            
             if not emptystart:
-                occupied, challenged_data = self.archive.retrieve(measures_batch)
-                challenged_solutions = [array_to_solution(sol) if occ else None for occ, sol in zip(occupied, challenged_data["solution"])]
+                _, pre_neighbours = self.archive.retrieve(measures_batch)
+                pre_neighbours_sols = [array_to_solution(sol) for sol in pre_neighbours["solution"]]
             
             res = original_add(*args, **kwargs)
             
             statuses = res["status"]
 
-            counts["new"] += int(np.sum(statuses == AddStatus.NEW))
-            counts["improved"] += int(np.sum(statuses == AddStatus.IMPROVE_EXISTING))
+            AddStatus_counts[AddStatus.NEW] += int(np.sum(statuses == AddStatus.NEW))
+            AddStatus_counts[AddStatus.IMPROVE_EXISTING] += int(np.sum(statuses == AddStatus.IMPROVE_EXISTING))
 
             if not emptystart:
-                new_occupied, new_challenged_data = self.archive.retrieve(measures_batch)
-                new_challenged_solutions = [array_to_solution(sol) if occ else None for occ, sol in zip(new_occupied, new_challenged_data["solution"])]
-                new_solutions = self.archive.data("solution")
-                new_ids = [array_to_solution(sol)["id"] for sol in new_solutions]
+                _, post_neighbours = self.archive.retrieve(measures_batch)
+                post_neighbours_sols = [array_to_solution(sol) for sol in post_neighbours["solution"]]
                 
-                for pos, solution in enumerate(solutions_batch):
-                        
-                        if not occupied[pos]:
-                            if statuses[pos] == AddStatus.IMPROVE_EXISTING: 
-                                log.warning("Status indicates improvement but cell was not occupied")
-                            continue
-                        if not new_occupied[pos]:
-                            if statuses[pos] == AddStatus.IMPROVE_EXISTING: 
-                                log.warning("Status indicates improvement but cell is no longer occupied after add")
-                            continue
-                        
-                        # It's possible the cell was improved but probably substituted again later in the batch
-                        potentially_subbed = challenged_solutions[pos]["id"]
-                        
-                        if (potentially_subbed not in new_ids and new_challenged_solutions[pos]["id"] == array_to_solution(solution)["id"]):
-                            old_sol = challenged_solutions[pos]
-                            new_sol = array_to_solution(solution)
-                            # check if old_sol is already in substitutions to avoid double-counting
-                            if not any(old_sol["id"] == s[0]["id"] for s in substitutions):
-                                substitutions.append((old_sol, new_sol))
-                                log.debug("Elite substitution tracked",old_id=old_sol["id"],new_id=new_sol["id"])
+                # check for each old neighbour what the new closest neighbour is after the batch add
+                _, pre_neighbor_new_nearest  = self.archive.retrieve(pre_neighbours["measures"])
+                pre_neighbor_new_nearest_sols = [array_to_solution(sol) for sol in pre_neighbor_new_nearest["solution"]]
+                
+                for idx, (batch_sol, challenged_new) in enumerate(zip(solutions_batch_dicts, post_neighbours_sols)):
+                    if batch_sol["id"] == challenged_new["id"]:
+                        # elite newly inserted or improved
+                        if pre_neighbours_sols[idx]["id"] == pre_neighbor_new_nearest_sols[idx]["id"]:
+                            # elite improved but didn't substitute its previous neighbour as the closest one, so it must have been a new insertion rather than a substitution
+                            new_insertions.append(batch_sol["id"])
+                        else:
+                            # elite improved and substituted its previous neighbour
+                            substitutions.append((pre_neighbours_sols[idx], batch_sol))
+                    else:
+                        # elite didn't win competition
+                        continue
+            
+            if len(substitutions) > 0:
+                # now check for any self substitutions among the batch solutions
+                subbing_ids = [sub[1]["id"] for sub in substitutions]
+                
+                subbing_measures = [m for m, s in zip(measures_batch, solutions_batch_dicts) if s["id"] in subbing_ids]
+            
+                _, neighbours = self.archive.retrieve(subbing_measures)
+                neighbours_ids = [array_to_solution(sol)["id"] for sol in neighbours["solution"]]
+                
+                # if the neighbour isn't itself, then it must have been substituted by another batch solution
+                # NOTE: in the proximity archive it is possible that two solutions substitute the same element, but are both kept 
+                for subber_id, neighbour_id in zip(subbing_ids, neighbours_ids):
+                   
+                    if subber_id != neighbour_id:
+                        # remove from substitutions
+                        substitutions[:] = [s for s in substitutions if s[1]["id"] != subber_id]
+
+            # update counts 
+            counts["new"] = len(new_insertions)
+            counts["improved"] = len(substitutions)     
+        
+            # check wheter its consistent with archive contents
+            archive_data = self.archive.data("solution")
+            archive_ids = set(array_to_solution(sol)["id"] for sol in archive_data)
+            for sub in substitutions:
+                if sub[0]["id"] in archive_ids:
+                    log.warning("Substituted elite still in archive",
+                                old_id=sub[0]["id"], new_id=sub[1]["id"])
+                if sub[1]["id"] not in archive_ids:
+                    log.warning("Substituting elite not in archive",
+                                new_id=sub[1]["id"])
+            
+            for sol in new_insertions:
+                if sol not in archive_ids:
+                    log.warning("New elite not in archive",
+                                new_id=sol["id"])
+            
+            post_archive_dicts_set = {array_to_solution(sol)["id"]: array_to_solution(sol) for sol in self.archive.data("solution")}
+            
+            # get new elites from sets
+            new_elites_from_sets = post_archive_dicts_set.keys() - self_pre_archive_dicts_set.keys()
+            # get removed elites from sets
+            removed_elites_from_sets = self_pre_archive_dicts_set.keys() - post_archive_dicts_set.keys()
+            
+            # fore each new elite check if it is in the tracked new insertions or substitutions, otherwise log a warning
+            for new_elite_id in new_elites_from_sets:
+                if new_elite_id not in [s[1]["id"] for s in substitutions] and new_elite_id not in new_insertions:
+                    log.warning("New elite not tracked as new or improved",
+                                new_id=new_elite_id)
                     
-                if  counts["improved"] > 0 and len(substitutions) == 0:
-                    log.warning("No substitutions tracked despite improved status", batch_size=len(solutions_batch))
-                if counts["improved"] == 0 and len(substitutions) > 0:
-                    log.warning("Substitutions tracked despite no improved status", batch_size=len(solutions_batch))
-                
+            # for each removed elite check if it is in the tracked substitutions, otherwise log a warning
+            for removed_elite_id in removed_elites_from_sets:
+                if removed_elite_id not in [s[0]["id"] for s in substitutions]:
+                    log.warning("Removed elite not tracked as substituted",
+                                removed_id=removed_elite_id)
+            
+
             return res
 
         self.archive.add = tracked_add
@@ -1082,6 +1155,9 @@ class QDRunner:
             score_list, clean_solutions = [], []
             # Measure is the embedding returned by the evaluator
             for (sol_id, ok, msg, objective_score, measure, phenotype_data), sol_dict in zip(gathered, sol_dicts):
+
+                if sol_id == 22.474385782410586:
+                    print(f"Found solution with ID {sol_id}")
 
                 if not ok:
                     log.warning("Clamping bad score",
