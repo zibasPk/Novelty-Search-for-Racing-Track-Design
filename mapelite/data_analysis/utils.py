@@ -167,4 +167,81 @@ def plot_trace_fixed_line(ax, trace_values, line_length=1.0, y=0.0, title=None,
         plt.colorbar(lc, ax=ax, fraction=0.03, pad=0.02)
     if title:
         ax.set_title(title, fontsize=8, pad=4)
+
+def project_elites_umap(
+    selected_elites,
+    umap_model,
+    all_umap_embeddings=None,
+    plot=True,
+    figure_size=(8, 6),
+    annotate=True,
+):
+    """
+    Project elite embeddings into 2D UMAP space.
+
+    Args:
+        selected_elites: List of elite dicts to project. Each elite must contain
+            keys "id" and "embedding".
+        umap_model: Fitted UMAP model exposing .transform(...).
+        all_umap_embeddings: Optional array of all elite UMAP embeddings for background plotting.
+        plot: If True, draw the scatter plot.
+        figure_size: Matplotlib figure size used when plot=True.
+        annotate: If True, annotate selected elites by index order.
+
+    Returns:
+        Dict with:
+            - selected_elites: ordered elite dicts passed in input
+            - selected_embeddings: list of embedding vectors
+            - reduced_points: np.ndarray of projected 2D points (N, 2)
+    """
+    selected_embeddings = [elite["embedding"] for elite in selected_elites]
+
+    reduced_points = []
+    for elite in selected_elites:
+        point = umap_model.transform([elite["embedding"]])[0]
+        print(f"Elite ID {elite['id']} UMAP 2D coords: {point}")
+        reduced_points.append(point)
+
+    reduced_points = np.array(reduced_points)
+
+    if plot:
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=figure_size)
+
+        if all_umap_embeddings is not None:
+            plt.scatter(
+                all_umap_embeddings[:, 0],
+                all_umap_embeddings[:, 1],
+                s=10,
+                alpha=0.5,
+                label="All Elites",
+            )
+
+        if reduced_points.size > 0:
+            plt.scatter(
+                reduced_points[:, 0],
+                reduced_points[:, 1],
+                s=20,
+                color="red",
+                label="Selected Elites",
+            )
+
+            if annotate:
+                for i, (x, y) in enumerate(reduced_points):
+                    plt.text(
+                        x,
+                        y,
+                        str(i),
+                        fontsize=8,
+                        ha="right",
+                        va="bottom",
+                        color="black",
+                    )
+
+        plt.title("UMAP Projection of Elite Embeddings")
+        plt.xlabel("UMAP Dimension 1")
+        plt.ylabel("UMAP Dimension 2")
+        plt.legend()
+        plt.show()
         

@@ -20,7 +20,7 @@ class Evaluator(ABC):
     """Abstract base class for solution evaluators."""
     @abstractmethod
     def evaluate(self, sol):
-        """Evaluates a solution and returns (id, ok, msg, fitness_score, measure)."""
+        """Evaluates a solution."""
         pass
 
     def fitness_formula(self, fit):
@@ -121,7 +121,6 @@ class EvaluatorMetrics(Evaluator):
         metrics = np.array(metrics, dtype=np.float32)
         metrics = self.preprocessor(metrics)
         data_tensor = torch.tensor(metrics, dtype=torch.float32).unsqueeze(0).to(self.device)
-
         
         with torch.no_grad():
             mu, var = self.embedding_model.encode(data_tensor, None)
@@ -137,7 +136,7 @@ class EvaluatorMetrics(Evaluator):
         phenotype_data = None
 
         if not is_valid_solution_array(solution_to_array(sol)):
-            return sol_id, False, "Invalid solution array", fit_score, measure
+            return sol_id, False, "Invalid solution array", fit_score, measure, phenotype_data
 
         try:
             r = requests.post(f"{BASE_URL}/evaluate", json=sol, timeout=60)
