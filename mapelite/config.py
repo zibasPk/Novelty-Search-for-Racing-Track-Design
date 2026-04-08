@@ -38,6 +38,9 @@ ARCHIVE_BINS = 30  # cells per axis
 REMAPPING_EVERY = 100  # remap archive every N iterations
 BUFFER_SIZE = 1000  # keep last 1000 solutions
 
+NS_KNN = 15  # for kNN novelty calculation
+
+
 # --- Checkpointing and Debugging ---
 CHECKPOINT_EVERY = 50
 DEBUG_CROSSOVER = True

@@ -17,7 +17,7 @@ dependencies = [
     "numpy==2.4.2",
     "requests==2.32.5",
     "joblib==1.5.0",
-    "ribs[all]==0.8.1",
+    "ribs[all]==0.8.3",
     "umap-learn==0.5.11",
     "scipy==1.17.1",
     "scikit-learn==1.8.0",

@@ -72,7 +72,7 @@ class CustomEmitter(EmitterBase):
             sol["rngMode"] = rngMode  # persist rngMode in the genome
             return sol, id
         except Exception as e:
-            log.error("Error generating solution", iteration=self.iteration, error=str(e))
+            log.warning("Error generating solution", iteration=self.iteration, error=str(e))
             return None, id
     
     def mutate_solutions(self):
@@ -118,7 +118,7 @@ class CustomEmitter(EmitterBase):
                     out.append(utils.invalid_solution_array(seed))
             
             except Exception as e:
-                log.error("Error mutating solution", sol_id=sol["id"], error=str(e))
+                log.warning("Error mutating solution", sol_id=sol["id"], error=str(e))
                 out.append(utils.invalid_solution_array(seed))
         
         return np.array(out)

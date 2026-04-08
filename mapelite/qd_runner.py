@@ -12,6 +12,7 @@ from mapelite.config import (
     DEFAULT_START_ITER,
     HEATMAP_DIR,
     EMBEDDING_MODEL_PATH,
+    NS_KNN,
     PRECOMPILED_EMBEDDINGS_PATH,
     RunMode
 )
@@ -21,6 +22,7 @@ from ribs.archives import AddStatus
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy_groupies import aggregate_nb as aggregate
 import os
 import glob
 import pickle
@@ -202,39 +204,19 @@ class ArchiveVisualizer:
                     "fitness": id_to_fitness.get(elite["id"], np.nan)
                 })
                 
-        # Apply substitutions, in-place preserving grid position when possible
-        subs_by_id = defaultdict(list)
+        # Apply substitutions, in-place preserving grid position
         for prev_sol, new_sol in substitutions:
-            if new_sol["id"] == 3.2919232767901017:
-                print(f"Found solution with ID {new_sol['id']} in substitution check")
-            subs_by_id[prev_sol["id"]].append(new_sol)
-
-        items_to_add = []
-        for item in self._grid_state:
-            new_sols = subs_by_id.pop(item["elite"]["id"], None)
-            if new_sols is None:
-                continue
-
-            item_snapshot = item.copy()  # snapshot before mutating, for appended copies
-
-            # First substitution: update in place
-            item["elite"]   = new_sols[0]
-            item["sub_count"] += 1
-            item["new"]     = True
-            item["fitness"] = id_to_fitness.get(new_sols[0]["id"], np.nan)
-
-            # Remaining substitutions: append copies of the original slot
-            for new_sol in new_sols[1:]:
-                new_item = item_snapshot.copy()
-                new_item["elite"]     = new_sol
-                new_item["sub_count"] += 1
-                new_item["new"]       = True
-                new_item["fitness"]   = id_to_fitness.get(new_sol["id"], np.nan)
-                items_to_add.append(new_item)
-
-        self._grid_state.extend(items_to_add)  
-        
-
+            for item in self._grid_state:
+                if item["elite"]["id"] == prev_sol["id"]:
+                    item["elite"] = new_sol
+                    item["sub_count"] += 1
+                    item["fitness"] = id_to_fitness.get(new_sol["id"], np.nan)
+                    item["new"] = True
+                    break
+            else:
+                log.error("Substitution target not found in grid state",
+                            target_id=prev_sol["id"], new_id=new_sol["id"])
+                
         if len(self._grid_state) == 0:
             return
 
@@ -242,50 +224,16 @@ class ArchiveVisualizer:
         archive_ids = set(sol_dict["id"] for sol_dict in elites_dicts)
         for item in self._grid_state:
             if item["elite"]["id"] not in archive_ids:
-                log.warning("Elite in grid state no longer in archive",
+                log.error("Elite in grid state no longer in archive",
                             elite_id=item["elite"]["id"])
         
         # check if all elites in archive are in gridstate; if not, log a warning (but don't add them to the gridstate since they may have been substituted in later batches)    
         for elite in elites_dicts:
             if not in_grid(elite["id"]):
-                log.warning("Elite in archive not found in grid state",
+                log.error("Elite in archive not found in grid state",
                             elite_id=elite["id"])
-        #check if all substitutions are valid (new solutions are in the archive); if not, log a warning
-        for _, new_sol in substitutions:
-            if new_sol["id"] not in archive_ids:
-                log.warning("Substituted solution not found in archive",
-                            new_id=new_sol["id"])
-            
   
-        archive_ids = [sol_dict["id"] for sol_dict in elites_dicts]
-        substitutions_info = [(prev["id"], new["id"]) for prev, new in substitutions]
         grid_state_ids_sub_counts = [(item["elite"]["id"], item["sub_count"]) for item in self._grid_state]
-        
-        prev_elite_ids = []
-        prev_substitutions_info = []
-        prev_grid_state_ids_sub_counts = []
-        if self.prev_iteration_data is not None:
-            prev_elite_ids = [sol_dict["id"] for sol_dict in self.prev_iteration_data["elites"]]
-            prev_substitutions_info = [(prev["id"], new["id"]) for prev, new in self.prev_iteration_data["substitutions"]]
-            prev_grid_state_ids_sub_counts = [(item["elite"]["id"], item["sub_count"]) for item in self.prev_iteration_data["grid_state"]]
-        
-        log.debug("Debug info for grid plot",
-                    elite_ids=archive_ids,
-                    substitutions=substitutions_info,
-                    grid_state=grid_state_ids_sub_counts,
-                    prev_elite_ids=prev_elite_ids,
-                    prev_substitutions=prev_substitutions_info,
-                    prev_grid_state=prev_grid_state_ids_sub_counts
-                    )
-        
-        self.prev_iteration_data = {
-            "elites": elites_dicts,
-            "id_to_fitness": id_to_fitness,
-            "substitutions": substitutions,
-            "grid_state": self._grid_state.copy()
-        }
-        
-       
         
         # ── Fixed grid dimensions ──
         cols = max_cols
@@ -842,6 +790,7 @@ class QDRunner:
             archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state = grid_state)
         
         self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
+        self.iteration = 0
         
     @classmethod
     def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
@@ -1022,116 +971,36 @@ class QDRunner:
 
     @contextmanager
     def _track_add_status(self):
-        AddStatus_counts = {AddStatus.NEW: 0, AddStatus.IMPROVE_EXISTING: 0}
-        counts = {"new": 0, "improved": 0}
-        substitutions = []  # (old_id, new_id)
-        new_insertions = []  # (new_id)
-        original_add = self.archive.add
+        substitutions = []   # list of (old_solution, new_solution)
+        new_insertions = []  # list of new_solution
+        original_store_add = self.archive._store.add
 
-        def tracked_add(*args, **kwargs):
-            solutions_batch, measures_batch = kwargs.get("solution"), kwargs.get("measures")
-            solutions_batch_dicts = [array_to_solution(sol) for sol in solutions_batch]
-            emptystart = self.archive.stats.num_elites == 0
-            
-            self_pre_archive_dicts_set = {array_to_solution(sol)["id"]: array_to_solution(sol) for sol in self.archive.data("solution")}
-            
-            if not emptystart:
-                _, pre_neighbours = self.archive.retrieve(measures_batch)
-                pre_neighbours_sols = [array_to_solution(sol) for sol in pre_neighbours["solution"]]
-            
-            res = original_add(*args, **kwargs)
-            
-            statuses = res["status"]
+        def tracked_store_add(indices, data):
+            current_size = len(self.archive)
 
-            AddStatus_counts[AddStatus.NEW] += int(np.sum(statuses == AddStatus.NEW))
-            AddStatus_counts[AddStatus.IMPROVE_EXISTING] += int(np.sum(statuses == AddStatus.IMPROVE_EXISTING))
+            is_replacing = indices < current_size
+            is_new       = ~is_replacing
 
-            if not emptystart:
-                _, post_neighbours = self.archive.retrieve(measures_batch)
-                post_neighbours_sols = [array_to_solution(sol) for sol in post_neighbours["solution"]]
-                
-                # check for each old neighbour what the new closest neighbour is after the batch add
-                _, pre_neighbor_new_nearest  = self.archive.retrieve(pre_neighbours["measures"])
-                pre_neighbor_new_nearest_sols = [array_to_solution(sol) for sol in pre_neighbor_new_nearest["solution"]]
-                
-                for idx, (batch_sol, challenged_new) in enumerate(zip(solutions_batch_dicts, post_neighbours_sols)):
-                    if batch_sol["id"] == challenged_new["id"]:
-                        # elite newly inserted or improved
-                        if pre_neighbours_sols[idx]["id"] == pre_neighbor_new_nearest_sols[idx]["id"]:
-                            # elite improved but didn't substitute its previous neighbour as the closest one, so it must have been a new insertion rather than a substitution
-                            new_insertions.append(batch_sol["id"])
-                        else:
-                            # elite improved and substituted its previous neighbour
-                            substitutions.append((pre_neighbours_sols[idx], batch_sol))
-                    else:
-                        # elite didn't win competition
-                        continue
-            
-            if len(substitutions) > 0:
-                # now check for any self substitutions among the batch solutions
-                subbing_ids = [sub[1]["id"] for sub in substitutions]
-                
-                subbing_measures = [m for m, s in zip(measures_batch, solutions_batch_dicts) if s["id"] in subbing_ids]
-            
-                _, neighbours = self.archive.retrieve(subbing_measures)
-                neighbours_ids = [array_to_solution(sol)["id"] for sol in neighbours["solution"]]
-                
-                # if the neighbour isn't itself, then it must have been substituted by another batch solution
-                # NOTE: in the proximity archive it is possible that two solutions substitute the same element, but are both kept 
-                for subber_id, neighbour_id in zip(subbing_ids, neighbours_ids):
-                   
-                    if subber_id != neighbour_id:
-                        # remove from substitutions
-                        substitutions[:] = [s for s in substitutions if s[1]["id"] != subber_id]
+            if np.any(is_replacing):
+                replacing_indices = indices[is_replacing]
+                _, old_data = self.archive._store.retrieve(replacing_indices)
+                # CRITICAL: copy before original_store_add overwrites the store's
+                # underlying buffer (retrieve() likely returns views, not copies)
+                old_solutions = old_data["solution"].copy()
+                new_solutions = data["solution"][is_replacing]   # already a copy (bool index)
+                substitutions.extend(zip(old_solutions, new_solutions))
 
-            # update counts 
-            counts["new"] = len(new_insertions)
-            counts["improved"] = len(substitutions)     
+            if np.any(is_new):
+                new_insertions.extend(data["solution"][is_new])
+
+            original_store_add(indices, data)
         
-            # check wheter its consistent with archive contents
-            archive_data = self.archive.data("solution")
-            archive_ids = set(array_to_solution(sol)["id"] for sol in archive_data)
-            for sub in substitutions:
-                if sub[0]["id"] in archive_ids:
-                    log.warning("Substituted elite still in archive",
-                                old_id=sub[0]["id"], new_id=sub[1]["id"])
-                if sub[1]["id"] not in archive_ids:
-                    log.warning("Substituting elite not in archive",
-                                new_id=sub[1]["id"])
-            
-            for sol in new_insertions:
-                if sol not in archive_ids:
-                    log.warning("New elite not in archive",
-                                new_id=sol["id"])
-            
-            post_archive_dicts_set = {array_to_solution(sol)["id"]: array_to_solution(sol) for sol in self.archive.data("solution")}
-            
-            # get new elites from sets
-            new_elites_from_sets = post_archive_dicts_set.keys() - self_pre_archive_dicts_set.keys()
-            # get removed elites from sets
-            removed_elites_from_sets = self_pre_archive_dicts_set.keys() - post_archive_dicts_set.keys()
-            
-            # fore each new elite check if it is in the tracked new insertions or substitutions, otherwise log a warning
-            for new_elite_id in new_elites_from_sets:
-                if new_elite_id not in [s[1]["id"] for s in substitutions] and new_elite_id not in new_insertions:
-                    log.warning("New elite not tracked as new or improved",
-                                new_id=new_elite_id)
-                    
-            # for each removed elite check if it is in the tracked substitutions, otherwise log a warning
-            for removed_elite_id in removed_elites_from_sets:
-                if removed_elite_id not in [s[0]["id"] for s in substitutions]:
-                    log.warning("Removed elite not tracked as substituted",
-                                removed_id=removed_elite_id)
-            
-
-            return res
-
-        self.archive.add = tracked_add
+        self.archive._store.add = tracked_store_add
         try:
-            yield counts, substitutions
+            yield new_insertions, substitutions
         finally:
-            if "add" in self.archive.__dict__:
-                del self.archive.__dict__["add"]
+            if "add" in self.archive._store.__dict__:
+                del self.archive._store.__dict__["add"]
 
     # -- main loop ------------------------------------------------------------
 
@@ -1144,7 +1013,7 @@ class QDRunner:
             start_iter = self.start_iter
 
         for i in range(start_iter, total_iters):
-
+            self.iteration = i  # for tracking in add() wrapper
             sols = self.scheduler.ask()
             sol_dicts = [array_to_solution(sol) for sol in sols]
 
@@ -1160,7 +1029,7 @@ class QDRunner:
                     print(f"Found solution with ID {sol_id}")
 
                 if not ok:
-                    log.warning("Clamping bad score",
+                    log.info("Clamping bad score",
                                 sol_id=sol_id, reason=msg)
                     objective_score = INVALID_SCORE
                 else:
@@ -1178,13 +1047,16 @@ class QDRunner:
             score_batch, measures_batch = zip(*clean_solutions)
 
             # ── Tell with add-status tracking ──
-            with self._track_add_status() as (counts, substitutions):
+            with self._track_add_status() as (new_insertions, substitutions):
                 self.scheduler.tell(list(score_batch), list(measures_batch))
+
+            new_insertions_dicts = [array_to_solution(s) for s in new_insertions]
+            substitution_dicts   = [(array_to_solution(old), array_to_solution(new)) for old, new in substitutions]
 
 
             # Metrics and Visualizations:
-            new_elites_count = counts["new"]
-            sub_elites_count = counts["improved"]
+            new_elites_count = len(new_insertions_dicts)   # was: counts["new"]
+            sub_elites_count = len(substitution_dicts)
             batch_best = max(score_list) if score_list else INVALID_SCORE
 
             log.info(
@@ -1216,7 +1088,7 @@ class QDRunner:
             qd_score = self._compute_qd_score(arch_scores)
             acceptance_rate = self._compute_acceptance_rate(new_elites_count, sub_elites_count, len(sol_dicts))
             mean_pairwise_dist = self._compute_mean_pairwise_dist(measures)
-            high_quality_cov = self._compute_high_quality_coverage(arch_scores)
+            high_quality_cov = self._compute_high_quality_coverage(arch_scores, threshold=10.0)
             
             mean_knn_novelty = None
             fitness_novelty_corr = None
@@ -1226,8 +1098,8 @@ class QDRunner:
                 case RunMode.CVT:
                     wss = self._compute_wss(self.centroids) 
                 case RunMode.NS:
-                    mean_knn_novelty = self._compute_mean_knn_novelty(measures)
-                    fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_scores)
+                    mean_knn_novelty = self._compute_mean_knn_novelty(measures, k = NS_KNN)
+                    fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_scores, k = NS_KNN)
                 case _:
                     log.warning("Unknown run mode: ", mode=self._run_mode)
             
@@ -1255,7 +1127,7 @@ class QDRunner:
             # its important to make sure it runs at least the first iteration
             if i == 0 or new_elites_count > 0 or sub_elites_count > 0:
                 self._visualizer.plot_heatmap(i)
-                self._visualizer.plot_grid(i, substitutions)
+                self._visualizer.plot_grid(i, substitution_dicts)
             
             # Save plot_grid in stats
             self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
