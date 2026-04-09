@@ -117,6 +117,35 @@ class EvaluatorMetrics(Evaluator):
         
         return cls(embedding_model, embedding_dim, device)
 
+    @staticmethod
+    def validate_metrics(metrics):
+        """Checks if metrics are valid"""
+        # check the number of 0s in the steering is more thant 80% of the values, if so return False
+        steering_metrics = metrics[:, 2]
+        accel_metrics = metrics[:, 3]
+        brake_metrics = metrics[:, 4]
+        
+        def calculate_zero_ratio(data):
+            zero_count = np.sum(data == 0)
+            total_count = len(data)
+            if total_count == 0:
+                return 1.0
+            return zero_count / total_count
+        
+        steering_zero_ratio = calculate_zero_ratio(steering_metrics)
+        accel_zero_ratio = calculate_zero_ratio(accel_metrics)
+        brake_metrics_zero_ratio = calculate_zero_ratio(brake_metrics)
+        if steering_zero_ratio > 0.8:
+            log.debug(f"Steering metrics have {steering_zero_ratio:.2%} zeros, which is above the threshold.")
+            return False
+        if accel_zero_ratio > 0.8:
+            log.debug(f"Acceleration metrics have {accel_zero_ratio:.2%} zeros, which is above the threshold.")
+            return False
+        if brake_metrics_zero_ratio > 0.8:
+            log.debug(f"Brake metrics have {brake_metrics_zero_ratio:.2%} zeros, which is above the threshold.")
+            return False
+        return True
+    
     def measure_from_metrics(self, metrics):
         metrics = np.array(metrics, dtype=np.float32)
         metrics = self.preprocessor(metrics)
@@ -151,6 +180,9 @@ class EvaluatorMetrics(Evaluator):
             # Extract the metrics used for calculating the measure (embedding)
             phenotype_data = fit.get("embedding_data", [])
             
+            if not EvaluatorMetrics.validate_metrics(phenotype_data):
+                raise ValueError("Invalid metrics for embedding (too many zeros)")
+            
             measure = self.measure_from_metrics(phenotype_data)
             
             # Compute final fitness score
@@ -161,3 +193,5 @@ class EvaluatorMetrics(Evaluator):
             msg = str(e)
 
         return sol_id, ok, msg, fit_score, measure, phenotype_data
+    
+   
