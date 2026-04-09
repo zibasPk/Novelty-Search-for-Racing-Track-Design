@@ -220,14 +220,14 @@ class ArchiveVisualizer:
         if len(self._grid_state) == 0:
             return
 
-        # check if all elites in gridstate are still in the archive; if not, log a warning
+        # check if all elites in gridstate are still in the archive; 
         archive_ids = set(sol_dict["id"] for sol_dict in elites_dicts)
         for item in self._grid_state:
             if item["elite"]["id"] not in archive_ids:
                 log.error("Elite in grid state no longer in archive",
                             elite_id=item["elite"]["id"])
         
-        # check if all elites in archive are in gridstate; if not, log a warning (but don't add them to the gridstate since they may have been substituted in later batches)    
+        # check if all elites in archive are in gridstate;
         for elite in elites_dicts:
             if not in_grid(elite["id"]):
                 log.error("Elite in archive not found in grid state",
@@ -976,24 +976,43 @@ class QDRunner:
         original_store_add = self.archive._store.add
 
         def tracked_store_add(indices, data):
-            current_size = len(self.archive)
-
-            is_replacing = indices < current_size
-            is_new       = ~is_replacing
-
+            indices_to_add = indices
+            data_to_add = data
+            
+            occupied, old_data = self.archive._store.retrieve(indices)
+            is_replacing = occupied
+            is_new       = ~occupied
+            
+            # recheck to see if indices need to be replaced 
+            replacing_indices = indices[is_replacing]
+            new_indices = indices[is_new]
+            
+            replacing_data_objectives = data["objective"][is_replacing]
+            old_objectives = old_data["objective"][is_replacing]
+            
+            if np.any(replacing_data_objectives <= old_objectives):
+                log.warning("Unexpectedly lower objective in add() call",
+                            indices=replacing_indices[replacing_data_objectives <= old_objectives],
+                            new_objectives=replacing_data_objectives[replacing_data_objectives <= old_objectives],
+                            old_objectives=old_objectives[replacing_data_objectives <= old_objectives])
+                
+                is_replacing = False
+                indices_to_add = new_indices  # only add the new indices, skip the replacements
+                data_to_add = {k: v[is_new] for k, v in data.items()}
+                
             if np.any(is_replacing):
-                replacing_indices = indices[is_replacing]
-                _, old_data = self.archive._store.retrieve(replacing_indices)
-                # CRITICAL: copy before original_store_add overwrites the store's
-                # underlying buffer (retrieve() likely returns views, not copies)
-                old_solutions = old_data["solution"].copy()
-                new_solutions = data["solution"][is_replacing]   # already a copy (bool index)
+                old_solutions = old_data["solution"][is_replacing].copy()
+                new_solutions = data["solution"][is_replacing]
                 substitutions.extend(zip(old_solutions, new_solutions))
 
             if np.any(is_new):
                 new_insertions.extend(data["solution"][is_new])
 
-            original_store_add(indices, data)
+            # log new insertions_ids and substitution_ids for this add() call
+            log.debug("New insertions: ", new= [array_to_solution(s)["id"] for s in new_insertions])
+            log.debug("Substitutions: ", sub= [(array_to_solution(old)["id"], array_to_solution(new)["id"]) for old, new in substitutions])
+            if len(indices_to_add) > 0:
+                original_store_add(indices_to_add, data_to_add)
         
         self.archive._store.add = tracked_store_add
         try:
@@ -1046,6 +1065,9 @@ class QDRunner:
 
             score_batch, measures_batch = zip(*clean_solutions)
 
+            if i == 10:
+                print("Debug breakpoint: iteration 10 reached.")
+            
             # ── Tell with add-status tracking ──
             with self._track_add_status() as (new_insertions, substitutions):
                 self.scheduler.tell(list(score_batch), list(measures_batch))
@@ -1061,12 +1083,12 @@ class QDRunner:
 
             log.info(
                 "Iteration complete",
+                new_elites=new_elites_count,
+                substituted=sub_elites_count,
                 iteration=i,
                 batch_best=f"{batch_best:.2f}",
                 global_best=f"{self.global_best_score:.2f}",
                 global_best_id=self.global_best_id,
-                new_elites=new_elites_count,
-                substituted=sub_elites_count,
             )
 
             data_archive = self.archive.data()
@@ -1124,10 +1146,8 @@ class QDRunner:
 
             log.info("Stats updated", iteration=i, stats=self.stats[-1])
 
-            # its important to make sure it runs at least the first iteration
-            if i == 0 or new_elites_count > 0 or sub_elites_count > 0:
-                self._visualizer.plot_heatmap(i)
-                self._visualizer.plot_grid(i, substitution_dicts)
+            self._visualizer.plot_heatmap(i)
+            self._visualizer.plot_grid(i, substitution_dicts)
             
             # Save plot_grid in stats
             self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
