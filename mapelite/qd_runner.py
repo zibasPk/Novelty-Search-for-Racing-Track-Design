@@ -441,7 +441,7 @@ class ArchiveVisualizer:
 
     # -- stats plot -----------------------------------------------------------
 
-    def plot_stats(self, title="QD Run Statistics"):
+    def plot_stats(self, title="QD Run Statistics", stats_dir=None):
         """Modular run-statistics plot.
 
         Each subplot is driven by an entry in ``PANELS`` below.  To add a new
@@ -622,6 +622,12 @@ class ArchiveVisualizer:
         axes[-1].set_xlabel("Iteration")
         plt.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
+        
+        # Save plot image to file
+        if stats_dir:
+            os.makedirs(stats_dir, exist_ok=True)
+            fig.savefig(os.path.join(stats_dir, "run_stats.png"), dpi=200)
+        plt.close(fig)
 
         # ── Summary printout ─────────────────────────────────────────────────
         archive_sizes = get_series("Archive size")
@@ -1043,10 +1049,6 @@ class QDRunner:
             score_list, clean_solutions = [], []
             # Measure is the embedding returned by the evaluator
             for (sol_id, ok, msg, objective_score, measure, phenotype_data), sol_dict in zip(gathered, sol_dicts):
-
-                if sol_id == 22.474385782410586:
-                    print(f"Found solution with ID {sol_id}")
-
                 if not ok:
                     log.info("Clamping bad score",
                                 sol_id=sol_id, reason=msg)
