@@ -13,15 +13,16 @@ export function mutationVoronoi(individual, intensity, seed = null) {
     point.x === selectedCells[randomIndex].x &&
     point.y === selectedCells[randomIndex].y
   ); 
+  if (dataSetIndex === -1) {
+    throw new Error('Selected cell not found in dataset');
+  }
+
   selectedCells[randomIndex].x += deltaX;
   selectedCells[randomIndex].y += deltaY;
 
-  if (dataSetIndex !== -1) {
-    // Remove the point from the dataset
-    dataSet.splice(dataSetIndex, 1);
-  }
-  // Add the mutated point to the dataset
-  dataSet.push(selectedCells[randomIndex]);
+  // change the point inplace
+  dataSet[dataSetIndex] = selectedCells[randomIndex];
+
   return { ds: dataSet, sel: selectedCells };
 }
 

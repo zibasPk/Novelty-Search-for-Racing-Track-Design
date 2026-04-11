@@ -33,10 +33,10 @@ export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JS
 
 	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
 
-	// process to reduce the approximation error using "findMaxCurveBeforeStraight" heuristic
-	// const segmentLength = 10;
-	// const minIndex = utils.findMaxCurveBeforeStraight(splineTrack, segmentLength);
-	// let splineTrack1 = splineTrack.slice(minIndex).concat(splineTrack.slice(0, minIndex));
+	// Canonicalize winding order
+	if (utils.signedArea(splineTrack) > 0) {
+		splineTrack.reverse();
+	}
 
 	const minIndex2 = utils.findLongestStraightSegment(splineTrack, 0.01, 0.5);
 	let splineTrack2 = splineTrack.slice(minIndex2).concat(splineTrack.slice(0, minIndex2));

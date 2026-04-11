@@ -305,6 +305,22 @@ export function normalizeVector(vector) {
 }
 
 /**
+ * Returns the signed area of a closed polygon via the shoelace formula.
+ * Positive = counter-clockwise (in standard math coords),
+ * Negative = clockwise (in screen/canvas coords where Y grows downward).
+ */
+export function signedArea(points) {
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const { x: x1, y: y1 } = points[i];
+    const { x: x2, y: y2 } = points[(i + 1) % n];
+    area += (x1 * y2) - (x2 * y1);
+  }
+  return area / 2;
+}
+
+/**
  * Check whether two line segments (p1→p2) and (p3→p4) intersect.
  * Uses the standard cross-product orientation test.
  * Returns true if segments properly cross each other (not just touch at endpoints).
