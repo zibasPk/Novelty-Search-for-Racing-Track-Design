@@ -254,8 +254,8 @@ def load_model(path, device):
         input_dim=config['input_dim'],
         hidden_dim=config['hidden_dim'],
         latent_dim=config['latent_dim'],
-        n_layers=config.get('n_layers', 4),
-        n_heads=config.get('n_heads', 4),
+        n_layers=config['n_layers'],
+        n_heads=config['n_heads'],
         max_seq_len=config['max_seq_len']
     )
     
@@ -270,9 +270,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Track Embeddings from VAE with Dimensionality Reduction")
     parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_1.pth", 
+    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_aug_2.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_1.npz", 
+    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_aug_2.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")
