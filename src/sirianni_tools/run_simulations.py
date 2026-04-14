@@ -264,6 +264,8 @@ def main():
             trace_data["accel_trace"] = parsed.get("accel_trace", None)
             trace_data["steer_trace"] = parsed.get("steer_trace", None)
             trace_data["brake_trace"] = parsed.get("brake_trace", None)
+            trace_data["border_dist_trace"] = parsed.get("border_dist_trace", None)
+            
             
                      
     # 2) run multiple races and accumulate the results

@@ -219,10 +219,14 @@ for path in args.paths:
                 folder_name, track_name, utils.dynamicsLogColumns.steer.value)
             brake_dist_trace = traces.get_trace(
                 folder_name, track_name, utils.dynamicsLogColumns.brake.value)
+            border_dist_trace = traces.get_trace(
+                folder_name, track_name, utils.dynamicsLogColumns.right_border_dist.value) 
+            
             raw_metrics['speed_trace'] = speed_dist_trace
             raw_metrics['accel_trace'] = accel_dist_trace
             raw_metrics['steer_trace'] = steer_dist_trace
             raw_metrics['brake_trace'] = brake_dist_trace
+            raw_metrics['border_dist_trace'] = border_dist_trace
 
         print("===JSON_START===")
         print(json.dumps(raw_metrics, indent=2))
