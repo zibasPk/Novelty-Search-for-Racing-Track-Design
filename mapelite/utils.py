@@ -1,27 +1,10 @@
 # utilities.py
 
 import numpy as np
-import requests
-import random
-import joblib
-import os
 
 from mapelite.config import (
-    BASE_URL, GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE, RngMode
+    GENERATION_MODE, POINTS_COUNT, MAX_SELECTED_CELLS, SOLUTION_DIM, INVALID_SCORE, RngMode
 )
-
-# --- Embedding Model Loading ---
-# Note: Ensure "data/EmbeddingModels/umap_model.joblib" exists relative to where the notebook is run.
-try:
-    EMBEDDING_MODEL = joblib.load("data/EmbeddingModels/umap_model.joblib")
-except FileNotFoundError:
-    print("Warning: UMAP model not found. Placeholder used. (Run the setup notebook first?)")
-    # Placeholder class to prevent crash if model isn't trained/found
-    class PlaceholderUMAP:
-        def transform(self, data):
-            # Returns a dummy 2D measure
-            return np.zeros((data.shape[0], 2))
-    EMBEDDING_MODEL = PlaceholderUMAP()
 
 # --- Core Utility Functions ---
 
@@ -93,10 +76,6 @@ def is_valid_solution_array(arr):
     """Checks if a solution array is valid (not filled with INVALID_SCORE)."""
     return arr is not None and not np.all(arr[:-1] == INVALID_SCORE)  # Ignore ID in validity check
 
-def get_fractional_part(x):
-    """Gets the fractional part of a float ID, used for mutation/crossover."""
-    return x - int(x)
-
 def pca_align(points):
     """Performs PCA-based alignment on a set of 2D points (spline vector)."""
     # Center the points
@@ -118,37 +97,3 @@ def pca_align(points):
         aligned[:, 0] *= -1
         
     return aligned
-
-
-
-def get_initial_archive_ranges(umap_model = EMBEDDING_MODEL, padding=0.1, default_bounds=(-1, 1)):
-    """
-    Extracts the bounds of the offline training data from the UMAP model to 
-    set intelligent initial ranges for the MAP-Elites grid.
-    
-    Args:
-        umap_model: The loaded UMAP object.
-        padding: Percentage of extra space to add around the data (0.1 = 10%).
-        default_bounds: Fallback range if training data is missing from the model object.
-    """
-    # Check if the model contains the training embedding
-    if hasattr(umap_model, 'embedding_') and umap_model.embedding_ is not None:
-        data = umap_model.embedding_
-        
-        # Calculate X bounds
-        min_x, max_x = data[:, 0].min(), data[:, 0].max()
-        span_x = max_x - min_x
-        range_x = (min_x - (span_x * padding), max_x + (span_x * padding))
-        
-        # Calculate Y bounds
-        min_y, max_y = data[:, 1].min(), data[:, 1].max()
-        span_y = max_y - min_y
-        range_y = (min_y - (span_y * padding), max_y + (span_y * padding))
-        
-        print(f"[Archive Init] Auto-detected ranges: X={range_x}, Y={range_y}")
-        return [range_x, range_y]
-    
-    else:
-        # Fallback if the model was saved without data to save space
-        print(f"[Archive Init] Model data missing. Using default ranges: {default_bounds}")
-        return [default_bounds, default_bounds]

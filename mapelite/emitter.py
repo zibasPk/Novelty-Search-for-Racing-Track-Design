@@ -105,7 +105,6 @@ class CustomEmitter(EmitterBase):
                 mutated = response.json().get("mutated", {})
                 
                 # Assign a unique, iteration-based ID for tracking
-                frac = utils.get_fractional_part(sol["id"])
                 mutated["id"] = seed
                 mutated["rngMode"] = sol.get("rngMode", RngMode.UNIFORM)  # inherit rngMode from parent
                 
