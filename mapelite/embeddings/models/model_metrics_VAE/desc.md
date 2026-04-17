@@ -10,3 +10,7 @@
 ### model_metrics_VAE_mixRng_tita_aug_2.pth
 - VAE model trained on a mixed (perlin/uniform) dataset of 20k track metrics created with Tita driver, with augmentation with rolling.
 - Adds per sample recon loss calculation.
+
+### model_metrics_VAE_mixRng_tita_constrastive_1.pth
+- VAE model trained on a mixed (perlin/uniform) dataset of 20k track metrics created with Tita driver.
+- Adds contrastive loss to try to make rolled versions of the same track closer in the embedding space. 

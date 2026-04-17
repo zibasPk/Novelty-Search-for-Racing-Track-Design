@@ -7,8 +7,6 @@ Model:
 
 Data:
     MetricsDataset         – PyTorch dataset for variable-length metrics.
-    MetricsDataModule      – dataset + collation + loader factory.
-
 Training:
     VAETrainer             – encapsulated training loop.
     TrainingConfig         – hyper-parameter dataclass.
@@ -22,7 +20,7 @@ Loss:
 """
 
 from mapelite.vae.model import MetricsTransformerVAE
-from mapelite.vae.data import MetricsDataset, MetricsDataModule
+from mapelite.vae.data import MetricsDataset
 from mapelite.vae.training import VAETrainer, TrainingConfig, EarlyStopper
 from mapelite.vae.preprocessing import MetricsPreprocessor
 from mapelite.vae.losses import vae_loss
@@ -30,7 +28,6 @@ from mapelite.vae.losses import vae_loss
 __all__ = [
     "MetricsTransformerVAE",
     "MetricsDataset",
-    "MetricsDataModule",
     "VAETrainer",
     "TrainingConfig",
     "EarlyStopper",
