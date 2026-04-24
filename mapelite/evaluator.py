@@ -2,12 +2,11 @@ import os
 
 import numpy as np
 import requests
-import joblib
 from mapelite.logging_config import get_logger
 import torch
 
 from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
-from mapelite.utils import EMBEDDING_MODEL, pca_align, solution_to_array, is_valid_solution_array
+from mapelite.utils import solution_to_array, is_valid_solution_array
 from abc import ABC, abstractmethod
 from mapelite.config import (
     BASE_URL, INVALID_SCORE

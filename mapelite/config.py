@@ -1,7 +1,6 @@
 # config.py
 
 import logging
-import os
 from enum import IntEnum
 
 

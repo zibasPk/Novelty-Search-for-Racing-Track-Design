@@ -33,7 +33,7 @@ export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JS
 
 	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
 
-	// Canonicalize winding order
+	// Canonicalize winding order note this breaks if we allow self-intersecting tracks but we check for that later and throw an error, so should be fine
 	if (utils.signedArea(splineTrack) > 0) {
 		splineTrack.reverse();
 	}

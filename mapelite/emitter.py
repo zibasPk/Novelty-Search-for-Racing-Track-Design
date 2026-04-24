@@ -7,7 +7,7 @@ from mapelite.logging_config import get_logger
 
 from ribs.emitters import EmitterBase
 
-from mapelite.config import BASE_URL, BATCH_SIZE, DEFAULT_START_ITER, RANDOM_POPULATION_ITERS, SOLUTION_DIM, INVALID_SCORE, GENERATION_MODE, TRACK_SIZE_RANGE, RngMode
+from mapelite.config import BASE_URL, BATCH_SIZE, DEFAULT_START_ITER, RANDOM_POPULATION_ITERS, GENERATION_MODE, TRACK_SIZE_RANGE, RngMode
 import mapelite.utils as utils
 
 log = get_logger("emitter")
