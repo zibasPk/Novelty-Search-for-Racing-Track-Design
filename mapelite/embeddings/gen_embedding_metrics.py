@@ -48,11 +48,11 @@ def load_and_preprocess_data(path):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate original track embeddings from VAE")
-    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita.npz", 
+    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita_winded.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_contrastive_1.pth", 
+    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_circular_1.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_contrastive_1_B.npz", 
+    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_1.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")
@@ -78,7 +78,7 @@ def main():
     print("Generating embeddings...")
     
     with torch.no_grad():
-        for data, mask, _, _ in tqdm(loader, desc="Encoding"):
+        for data, mask in tqdm(loader, desc="Encoding"):
             data = data.to(device)
             mask = mask.to(device)
             mu, _ = model.encode(data, src_key_padding_mask=mask)
