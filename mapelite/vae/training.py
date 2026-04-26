@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
+from torch.amp import GradScaler, autocast
 from tqdm.auto import tqdm
 
 from mapelite.vae.losses import vae_loss
@@ -34,12 +35,12 @@ class TrainingConfig:
         """Build from the legacy ``parameters`` dict format."""
         kld = d.get("kld", {})
         return cls(
-            lr=d.get("lr", cls.lr),
-            epochs=d.get("epochs", cls.epochs),
-            patience=d.get("patience", cls.patience),
-            n_cycles=kld.get("n_cycles", cls.n_cycles),
-            max_beta=kld.get("max_beta", cls.max_beta),
-            ratio=kld.get("ratio", cls.ratio),
+            lr=d.get("lr", 1e-3),
+            epochs=d.get("epochs", 100),
+            patience=d.get("patience", 5),
+            n_cycles=kld.get("n_cycles", 4),
+            max_beta=kld.get("max_beta", 1.0),
+            ratio=kld.get("ratio", 0.5),
         )
 
 
@@ -55,13 +56,15 @@ class EarlyStopper:
         self.counter = 0
         self.min_validation_loss = float("inf")
         self.best_model_state = None
+        self.best_model_epoch = 0
 
-    def check(self, validation_loss: float, model: torch.nn.Module) -> bool:
+    def check(self, validation_loss: float, model: torch.nn.Module, epoch: int) -> bool:
         """Return *True* when training should stop."""
         if validation_loss < (self.min_validation_loss - self.min_delta):
             self.min_validation_loss = validation_loss
             self.counter = 0
             self.best_model_state = copy.deepcopy(model.state_dict())
+            self.best_model_epoch = epoch
         else:
             self.counter += 1
             if self.counter >= self.patience:
@@ -72,7 +75,8 @@ class EarlyStopper:
         """Restore the model to its best recorded state."""
         if self.best_model_state is not None:
             print(
-                f"Restoring model to best validation loss: "
+                f"Restoring model to best validation loss from epoch "
+                f"{self.best_model_epoch}: "
                 f"{self.min_validation_loss:.4f}"
             )
             model.load_state_dict(self.best_model_state)
@@ -97,6 +101,8 @@ class VAETrainer:
         self.device = device
         self.config = config
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+        self.use_amp = device.type == "cuda"
+        self.scaler = GradScaler("cuda", enabled=self.use_amp)
         self.early_stopper = EarlyStopper(
             patience=config.patience, min_delta=config.min_delta
         )
@@ -120,9 +126,10 @@ class VAETrainer:
 
             self._update_history(train_stats, val_stats, beta)
 
-            if self.early_stopper.check(val_stats["recon"], self.model):
-                print(f"\nEarly Stopping triggered at epoch {epoch + 1}")
-                break
+            if beta == cfg.max_beta:
+                if self.early_stopper.check(val_stats["recon"], self.model, epoch):
+                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                    break
 
             epoch_bar.set_postfix({
                 "T_Loss": f"{train_stats['total']:.2f}",
@@ -168,16 +175,19 @@ class VAETrainer:
             data, mask = data.to(self.device), mask.to(self.device)
             self.optimizer.zero_grad()
 
-            recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
-            loss, recon, kld = vae_loss(
-                recon_x, data, mu, log_var, mask=mask, beta=beta
-            )
+            with autocast("cuda", enabled=self.use_amp):
+                recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
+                loss, recon, kld = vae_loss(
+                    recon_x, data, mu, log_var, mask=mask, beta=beta
+                )
 
-            loss.backward()
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), max_norm=cfg.max_grad_norm
             )
-            self.optimizer.step()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             stats["recon"] += recon.item()
             stats["kld"] += kld.item()
@@ -194,10 +204,11 @@ class VAETrainer:
 
         for data, mask in loader:
             data, mask = data.to(self.device), mask.to(self.device)
-            recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
-            loss, recon, kld = vae_loss(
-                recon_x, data, mu, log_var, mask=mask, beta=beta
-            )
+            with autocast("cuda", enabled=self.use_amp):
+                recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
+                loss, recon, kld = vae_loss(
+                    recon_x, data, mu, log_var, mask=mask, beta=beta
+                )
             stats["recon"] += recon.item()
             stats["kld"] += kld.item()
             stats["total"] += loss.item()

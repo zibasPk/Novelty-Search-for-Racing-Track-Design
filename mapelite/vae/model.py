@@ -1,11 +1,10 @@
-"""Transformer-based VAE for track-metrics sequences."""
+"""Circular-CNN VAE for track-metrics sequences."""
 
 import os
 import math
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 class SinusoidalPositionalEncoding(nn.Module):
@@ -25,46 +24,125 @@ class SinusoidalPositionalEncoding(nn.Module):
         return x + self.pe[:, : x.size(1), :]
 
 
+class CircularConv1d(nn.Module):
+    """Conv1d with circular wrap-around padding and preserved sequence length."""
+
+    def __init__(self, in_channels, out_channels, kernel_size, dilation=1):
+        super().__init__()
+        self.pad = (kernel_size - 1) * dilation
+        self.conv = nn.Conv1d(
+            in_channels,
+            out_channels,
+            kernel_size,
+            padding=0,
+            dilation=dilation,
+        )
+
+    def forward(self, x):
+        if self.pad > 0:
+            x = torch.cat([x[:, :, -self.pad :], x], dim=2)
+        return self.conv(x)
+
+
+class CircularResBlock(nn.Module):
+    """Residual block with two circular convolutions."""
+
+    def __init__(self, channels, kernel_size=7, dilation=1):
+        super().__init__()
+        self.conv1 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
+        self.conv2 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
+        self.norm1 = nn.BatchNorm1d(channels)
+        self.norm2 = nn.BatchNorm1d(channels)
+        self.act = nn.GELU()
+
+    def forward(self, x):
+        residual = x
+        x = self.act(self.norm1(self.conv1(x)))
+        x = self.norm2(self.conv2(x))
+        return self.act(x + residual)
+
+
+class CircularCNNDecoder(nn.Module):
+    """Decoder that broadcasts latent code across time and refines with circular blocks."""
+
+    def __init__(self, latent_dim, hidden_dim, output_dim, n_layers=4, kernel_size=7):
+        super().__init__()
+        self.fc = nn.Linear(latent_dim, hidden_dim)
+        self.conv_blocks = nn.ModuleList(
+            [
+                CircularResBlock(
+                    hidden_dim,
+                    kernel_size=kernel_size,
+                    dilation=2 ** (n_layers - 1 - i),
+                )
+                for i in range(n_layers)
+            ]
+        )
+        self.final_projection = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, z, seq_len, src_key_padding_mask=None):
+        h = self.fc(z)
+        h = h.unsqueeze(-1).expand(-1, -1, seq_len)
+
+        valid = None
+        if src_key_padding_mask is not None:
+            valid = (~src_key_padding_mask).unsqueeze(1).float()
+
+        for block in self.conv_blocks:
+            if valid is not None:
+                h = h * valid
+            h = block(h)
+
+        if valid is not None:
+            h = h * valid
+
+        h = h.transpose(1, 2)
+        return self.final_projection(h)
+
+
 class MetricsTransformerVAE(nn.Module):
-    """Transformer VAE that encodes variable-length metric sequences
-    into a fixed-size latent space and decodes them back.
-    """
+    """Circular-CNN VAE with the original public class name for compatibility."""
 
     def __init__(
         self,
         input_dim=4,
-        hidden_dim=64,
+        hidden_dim=128,
         latent_dim=2,
         n_layers=4,
         n_heads=4,
-        max_seq_len=200,
+        max_seq_len=5000,
+        kernel_size=7,
     ):
         super().__init__()
+        self.input_dim = input_dim
         self.hidden_dim = hidden_dim
+        self.latent_dim = latent_dim
+        self.n_layers = n_layers
+        self.n_heads = n_heads
         self.max_seq_len = max_seq_len
+        self.kernel_size = kernel_size
 
         self.input_projection = nn.Linear(input_dim, hidden_dim)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, hidden_dim))
-        self.pos_encoding = SinusoidalPositionalEncoding(hidden_dim)
 
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, nhead=n_heads, batch_first=True
+        self.conv_blocks = nn.ModuleList(
+            [
+                CircularResBlock(hidden_dim, kernel_size=kernel_size, dilation=2**i)
+                for i in range(n_layers)
+            ]
         )
-        self.transformer_encoder = nn.TransformerEncoder(
-            encoder_layer, num_layers=n_layers
-        )
+
+        self.pool = nn.AdaptiveAvgPool1d(1)
 
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_var = nn.Linear(hidden_dim, latent_dim)
 
-        self.decoder_input = nn.Linear(latent_dim, hidden_dim)
-        decoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, nhead=n_heads, batch_first=True
+        self.decoder = CircularCNNDecoder(
+            latent_dim=latent_dim,
+            hidden_dim=hidden_dim,
+            output_dim=input_dim,
+            n_layers=n_layers,
+            kernel_size=kernel_size,
         )
-        self.transformer_decoder = nn.TransformerEncoder(
-            decoder_layer, num_layers=n_layers
-        )
-        self.final_projection = nn.Linear(hidden_dim, input_dim)
 
     @classmethod
     def load_pretrained(cls, path, device):
@@ -83,6 +161,7 @@ class MetricsTransformerVAE(nn.Module):
             n_layers=config.get("n_layers", 4),
             n_heads=config.get("n_heads", 4),
             max_seq_len=config["max_seq_len"],
+            kernel_size=config.get("kernel_size", 7),
         )
         model.load_state_dict(checkpoint["state_dict"])
         model.to(device)
@@ -93,26 +172,28 @@ class MetricsTransformerVAE(nn.Module):
     # -- core methods ---------------------------------------------------------
 
     def encode(self, x, src_key_padding_mask=None):
-        batch_size, seq_len, _ = x.shape
-        x = self.input_projection(x)
+        h = self.input_projection(x)
+        h = h.transpose(1, 2)
 
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-
+        valid = None
         if src_key_padding_mask is not None:
-            cls_mask = torch.zeros(
-                (batch_size, 1), dtype=torch.bool, device=x.device
-            )
-            src_key_padding_mask = torch.cat(
-                [cls_mask, src_key_padding_mask], dim=1
-            )
+            valid = (~src_key_padding_mask).unsqueeze(1).float()
 
-        x = self.pos_encoding(x)
-        x = self.transformer_encoder(x, src_key_padding_mask=src_key_padding_mask)
+        for block in self.conv_blocks:
+            if valid is not None:
+                h = h * valid
+            h = block(h)
 
-        summary = x[:, 0, :]
-        mu = self.fc_mu(summary)
-        log_var = self.fc_var(summary)
+        # Final zero-out before pooling so padding doesn't contaminate the mean
+        if src_key_padding_mask is not None:
+            # valid is already [B, 1, T] from earlier in your method
+            lengths = (~src_key_padding_mask).sum(dim=1, keepdim=True).float()  # [B, 1]
+            h = (h * valid).sum(dim=2) / (lengths + 1e-9)                       # [B, hidden_dim]
+        else:
+            h = h.mean(dim=2)                                                   # [B, hidden_dim]
+
+        mu = self.fc_mu(h)
+        log_var = self.fc_var(h)
         return mu, log_var
 
     def reparameterize(self, mu, log_var):
@@ -121,14 +202,7 @@ class MetricsTransformerVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z, seq_len, src_key_padding_mask=None):
-        batch_size = z.shape[0]
-        z_projected = self.decoder_input(z).unsqueeze(1)
-        queries = self.pos_encoding.pe[:, 1 : seq_len + 1, :]
-        queries = queries.expand(batch_size, -1, -1)
-        x = queries + z_projected
-        x = self.transformer_decoder(x, src_key_padding_mask=src_key_padding_mask)
-        output = self.final_projection(x)
-        return output
+        return self.decoder(z, seq_len, src_key_padding_mask)
 
     def forward(self, x, src_key_padding_mask=None):
         mu, log_var = self.encode(x, src_key_padding_mask)

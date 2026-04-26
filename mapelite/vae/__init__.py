@@ -3,7 +3,7 @@
 Public API
 ----------
 Model:
-    MetricsTransformerVAE  – transformer VAE architecture.
+    MetricsTransformerVAE  – circular-convolution VAE architecture.
 
 Data:
     MetricsDataset         – PyTorch dataset for variable-length metrics.

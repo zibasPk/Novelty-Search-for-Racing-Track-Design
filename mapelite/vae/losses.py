@@ -1,9 +1,9 @@
-"""VAE loss function for the metrics transformer model."""
+"""VAE loss function for metrics-sequence models."""
 
 import torch
 
 
-def vae_loss(recon_x, x, mu, log_var, mask=None, beta=0.001):
+def vae_loss(recon_x, x, mu, log_var, mask=None, beta=0.0):
     """Compute the VAE loss: reconstruction + β · KL divergence.
 
     Parameters
