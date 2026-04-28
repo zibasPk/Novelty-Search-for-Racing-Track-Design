@@ -35,6 +35,11 @@ app.use(express.json());
    Helpers
    ──────────────────────────────────────────────────────────── */
 const safeArray = arr => (Array.isArray(arr) ? arr : []);
+const isDefined = value => value !== undefined && value !== null;
+const requireFields = (body, fields) => {
+  const missing = fields.filter(field => !isDefined(body[field]));
+  return missing.length ? missing : null;
+};
 
 /* ─────────────────────────────────────────────────────────────
    /generate
@@ -42,6 +47,10 @@ const safeArray = arr => (Array.isArray(arr) ? arr : []);
 app.post('/generate', async (req, res) => {
   try {
     const { id, mode, trackSize, rngMode } = req.body;
+    const missing = requireFields(req.body, ['id', 'mode', 'trackSize', 'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
 
     const { track, generator, splineVector } =
       await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG, rngMode });
@@ -69,6 +78,10 @@ app.post('/generate', async (req, res) => {
 app.post('/genforweb', async (req, res) => {
   try {
     const { id, mode, trackSize , perlin_parameters, rngMode} = req.body;
+    const missing = requireFields(req.body, ['id', 'mode', 'trackSize',  'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
 
     const { track, generator, splineVector } = await generateTrack({
       mode,
@@ -102,9 +115,9 @@ app.post('/genforweb', async (req, res) => {
 app.post('/reconstruct', async (req, res) => {
   try {
     const { mode, seed, dataSet, selectedCells, trackSize } = req.body;
-
-    if (!mode || !dataSet) {
-      return res.status(400).json({ error: 'mode and dataSet are required' });
+    const missing = requireFields(req.body, ['mode', 'dataSet', 'seed','selectedCells', 'trackSize']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
     }
 
     const sel = safeArray(selectedCells);
@@ -149,6 +162,11 @@ app.post('/evaluate', async (req, res) => {
   try {
     const { id, mode, dataSet, selectedCells, rngMode, getTraces} = req.body;
 
+    const missing = requireFields(req.body, ['id', 'mode', 'dataSet', 'selectedCells', 'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
+
     const sel = safeArray(selectedCells);
 
 
@@ -192,6 +210,10 @@ app.post('/crossover', async (req, res, next) => {
   log.info('Crossover endpoint called');
   try {
     const { parent1, parent2, mode, genetic_seed } = req.body;
+    const missing = requireFields(req.body, ['parent1', 'parent2', 'mode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
     if (!parent1 || !parent2 ||
       !parent1.dataSet || !parent2.dataSet) {
       return res.status(400).json({ error: 'Invalid parent data' });
@@ -265,6 +287,10 @@ app.post('/crossover', async (req, res, next) => {
 app.post('/mutate', async (req, res, next) => {
   try {
     const { individual, intensityMutation = 50, genetic_seed } = req.body;
+    const missing = requireFields(req.body, ['individual']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
     if (!individual || !individual.dataSet) {
       return res.status(400).json({ error: 'Invalid individual data' });
     }
