@@ -365,16 +365,18 @@ class ArchiveVisualizer:
                 },
                 timeout=5,
             )
-            resp.raise_for_status()
-            track = resp.json().get("track", [])
+            r_json = resp.json()
+            if not resp.ok:
+                raise Exception(f"API error {resp.status_code}: {r_json.get('error', resp.text)}")
+            
+            track = r_json.get("track", [])
             if track:
                 xs = np.array([p["x"] for p in track], dtype=float)
                 ys = np.array([p["y"] for p in track], dtype=float)
                 result = (xs, ys)
         except Exception as exc:
-            log.debug("Track reconstruct failed",
-                      sol_id=sol_id, error=str(exc))
-
+            log.debug("Track reconstruct failed:", error=str(exc), sol_id=sol_id)
+        
         # Cache only successful reconstructions so transient failures can retry
         # on the next plotting call instead of staying permanently empty.
         if result is not None:
