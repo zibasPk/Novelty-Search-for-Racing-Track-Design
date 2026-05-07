@@ -115,7 +115,7 @@ app.post('/genforweb', async (req, res) => {
 app.post('/reconstruct', async (req, res) => {
   try {
     const { mode, seed, dataSet, selectedCells, trackSize } = req.body;
-    const missing = requireFields(req.body, ['mode', 'dataSet', 'seed','selectedCells', 'trackSize']);
+    const missing = requireFields(req.body, ['mode', 'dataSet','selectedCells']);
     if (missing) {
       return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
     }
