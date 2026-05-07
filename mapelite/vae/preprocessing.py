@@ -10,7 +10,7 @@ class MetricsPreprocessor:
     [id, Speed, Steering, Accel, Brake, Gear, distanceToBorder].
 
     Output: 2D array with columns [Speed, Steering, distanceToBorder],
-    normalised and canonicalised so that all tracks begin with a right turn.
+    normalised and clipped to the expected track width.
     """
 
     SPEED_IDX = 0

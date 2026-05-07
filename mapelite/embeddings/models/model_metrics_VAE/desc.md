@@ -34,3 +34,19 @@
 ### model_metrics_VAE_mixRng_tita_constrastive_6.pth
 - VAE model trained on a mixed (perlin/uniform) dataset with winding canonicalization of 20k track metrics created with Tita driver.
 - uses infoNCE contrastive loss with temp of 0.03 and weight of 2, uses the new dataset with winding canonicalization, so i removed the canonicalization from preprocessing.
+
+### model_metrics_VAE_mixRng_tita_circular_1.pth
+- VAE model trained on a mixed (perlin/uniform) dataset with winding canonicalization of 20k track metrics created with Tita driver.
+- uses completely new architecture using circular convolutions.
+
+### model_metrics_VAE_mixRng_tita_circular_2.pth
+Changes from model_metrics_VAE_mixRng_tita_circular_1.pth:
+- Adds lr scheduler in the training phase + weighted loss
+
+### model_metrics_VAE_mixRng_tita_circular_3.pth
+Changes from model_metrics_VAE_mixRng_tita_circular_2.pth:
+- Uses new dataset with also smaller track size (between 1 and 10 instead of 4 and 10)
+
+### model_metrics_VAE_mixRng_tita_circular_4.pth
+kaggle name: "no max_beta check for EarlyStopping"
+- Fixes issues with padding , adds positional encoding, uses ChannelLayerNorm instead of batchnorm, removes max_beta check from EarlyStopping

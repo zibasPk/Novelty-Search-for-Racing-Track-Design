@@ -1,4 +1,4 @@
-"""Circular-CNN VAE for track-metrics sequences."""
+﻿"""Circular-CNN VAE for track-metrics sequences."""
 
 import os
 import math
@@ -38,10 +38,32 @@ class CircularConv1d(nn.Module):
             dilation=dilation,
         )
 
-    def forward(self, x):
-        if self.pad > 0:
-            x = torch.cat([x[:, :, -self.pad :], x], dim=2)
+    def forward(self, x, lengths=None):
+        if lengths is not None:
+            B, C, T = x.shape
+            start_idx = lengths.unsqueeze(1) - self.pad
+            seq_idx = start_idx + torch.arange(self.pad, device=x.device)
+            valid_mask = (seq_idx >= 0).unsqueeze(1)
+            safe_idx = seq_idx.clamp(min=0)
+            safe_idx_expanded = safe_idx.unsqueeze(1).expand(-1, C, -1)
+            wrap = torch.gather(x, dim=2, index=safe_idx_expanded)
+            wrap = wrap * valid_mask.float()
+        else:
+            wrap = x[:, :, -self.pad:]
+
+        x = torch.cat([wrap, x], dim=2)
         return self.conv(x)
+
+
+class ChannelLayerNorm(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.norm = nn.LayerNorm(channels)
+
+    def forward(self, x):
+        x = x.transpose(1, 2)
+        x = self.norm(x)
+        return x.transpose(1, 2)
 
 
 class CircularResBlock(nn.Module):
@@ -51,23 +73,25 @@ class CircularResBlock(nn.Module):
         super().__init__()
         self.conv1 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
         self.conv2 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
-        self.norm1 = nn.BatchNorm1d(channels)
-        self.norm2 = nn.BatchNorm1d(channels)
+        self.norm1 = ChannelLayerNorm(channels)
+        self.norm2 = ChannelLayerNorm(channels)
         self.act = nn.GELU()
 
-    def forward(self, x):
+    def forward(self, x, lengths=None, valid=None):
         residual = x
-        x = self.act(self.norm1(self.conv1(x)))
-        x = self.norm2(self.conv2(x))
+        x = self.act(self.norm1(self.conv1(x, lengths)))
+        if valid is not None:
+            x = x * valid
+        x = self.norm2(self.conv2(x, lengths))
         return self.act(x + residual)
 
 
 class CircularCNNDecoder(nn.Module):
-    """Decoder that broadcasts latent code across time and refines with circular blocks."""
-
     def __init__(self, latent_dim, hidden_dim, output_dim, n_layers=4, kernel_size=7):
         super().__init__()
         self.fc = nn.Linear(latent_dim, hidden_dim)
+        self.pe = SinusoidalPositionalEncoding(hidden_dim, max_len=5000)
+
         self.conv_blocks = nn.ModuleList(
             [
                 CircularResBlock(
@@ -84,14 +108,21 @@ class CircularCNNDecoder(nn.Module):
         h = self.fc(z)
         h = h.unsqueeze(-1).expand(-1, -1, seq_len)
 
-        valid = None
+        h = h.transpose(1, 2)
+        h = self.pe(h)
+        h = h.transpose(1, 2)
+
         if src_key_padding_mask is not None:
             valid = (~src_key_padding_mask).unsqueeze(1).float()
+            lengths = (~src_key_padding_mask).sum(dim=1)
+        else:
+            lengths = None
+            valid = None
 
         for block in self.conv_blocks:
             if valid is not None:
                 h = h * valid
-            h = block(h)
+            h = block(h, lengths, valid)
 
         if valid is not None:
             h = h * valid
@@ -101,15 +132,15 @@ class CircularCNNDecoder(nn.Module):
 
 
 class MetricsTransformerVAE(nn.Module):
-    """Circular-CNN VAE with the original public class name for compatibility."""
+    """Shift-invariant circular CNN VAE for variable-length metrics."""
 
     def __init__(
         self,
-        input_dim=4,
+        input_dim=3,
         hidden_dim=128,
-        latent_dim=2,
+        latent_dim=32,
         n_layers=4,
-        n_heads=4,
+        n_heads=8,
         max_seq_len=5000,
         kernel_size=7,
     ):
@@ -136,6 +167,9 @@ class MetricsTransformerVAE(nn.Module):
         self.fc_mu = nn.Linear(hidden_dim, latent_dim)
         self.fc_var = nn.Linear(hidden_dim, latent_dim)
 
+        nn.init.constant_(self.fc_var.bias, -2.0)
+        nn.init.orthogonal_(self.fc_var.weight, gain=0.01)
+
         self.decoder = CircularCNNDecoder(
             latent_dim=latent_dim,
             hidden_dim=hidden_dim,
@@ -146,7 +180,6 @@ class MetricsTransformerVAE(nn.Module):
 
     @classmethod
     def load_pretrained(cls, path, device):
-        """Load a checkpoint saved with ``torch.save({'config': …, 'state_dict': …})``."""
         print(f"Loading model from {path}...")
         if not os.path.exists(path):
             raise FileNotFoundError(f"Model file not found at {path}")
@@ -159,8 +192,8 @@ class MetricsTransformerVAE(nn.Module):
             hidden_dim=config["hidden_dim"],
             latent_dim=config["latent_dim"],
             n_layers=config.get("n_layers", 4),
-            n_heads=config.get("n_heads", 4),
-            max_seq_len=config["max_seq_len"],
+            n_heads=config.get("n_heads", 8),
+            max_seq_len=config.get("max_seq_len", 5000),
             kernel_size=config.get("kernel_size", 7),
         )
         model.load_state_dict(checkpoint["state_dict"])
@@ -169,37 +202,33 @@ class MetricsTransformerVAE(nn.Module):
         print(f"Model loaded with latent_dim={config['latent_dim']}")
         return model, config["latent_dim"]
 
-    # -- core methods ---------------------------------------------------------
-
     def encode(self, x, src_key_padding_mask=None):
         h = self.input_projection(x)
         h = h.transpose(1, 2)
 
-        valid = None
         if src_key_padding_mask is not None:
             valid = (~src_key_padding_mask).unsqueeze(1).float()
+            lengths = (~src_key_padding_mask).sum(dim=1)
+        else:
+            lengths = None
+            valid = None
 
         for block in self.conv_blocks:
             if valid is not None:
                 h = h * valid
-            h = block(h)
+            h = block(h, lengths, valid)
 
-        # Final zero-out before pooling so padding doesn't contaminate the mean
-        if src_key_padding_mask is not None:
-            # valid is already [B, 1, T] from earlier in your method
-            lengths = (~src_key_padding_mask).sum(dim=1, keepdim=True).float()  # [B, 1]
-            h = (h * valid).sum(dim=2) / (lengths + 1e-9)                       # [B, hidden_dim]
+        if valid is not None:
+            lengths_f = lengths.float().unsqueeze(1)
+            h = (h * valid).sum(dim=2) / (lengths_f + 1e-9)
         else:
-            h = h.mean(dim=2)                                                   # [B, hidden_dim]
+            h = h.mean(dim=2)
 
-        mu = self.fc_mu(h)
-        log_var = self.fc_var(h)
-        return mu, log_var
+        return self.fc_mu(h), self.fc_var(h)
 
     def reparameterize(self, mu, log_var):
         std = torch.exp(0.5 * log_var)
-        eps = torch.randn_like(std)
-        return mu + eps * std
+        return mu + std * torch.randn_like(std)
 
     def decode(self, z, seq_len, src_key_padding_mask=None):
         return self.decoder(z, seq_len, src_key_padding_mask)
@@ -209,3 +238,4 @@ class MetricsTransformerVAE(nn.Module):
         z = self.reparameterize(mu, log_var)
         recon_x = self.decode(z, x.shape[1], src_key_padding_mask)
         return recon_x, mu, log_var
+

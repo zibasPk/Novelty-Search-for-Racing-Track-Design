@@ -8,10 +8,8 @@ from torch.nn.utils.rnn import pad_sequence
 class MetricsDataset(Dataset):
     """Wraps a list of variable-length metric arrays as a PyTorch Dataset."""
 
-    def __init__(self, metrics, n_shifts=0):
+    def __init__(self, metrics):
         self.metrics = [torch.tensor(t, dtype=torch.float32) for t in metrics]
-        # Kept for backward compatibility with older callsites.
-        self.n_shifts = n_shifts
         
     def __len__(self):
         return len(self.metrics)

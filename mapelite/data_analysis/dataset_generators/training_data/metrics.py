@@ -21,7 +21,8 @@ if mapelite_path not in sys.path:
 def create_dataset(source_folder, output_file, max_files=None):
     dataset = []
     sourceIDs = []
-    max_length = 0
+    lengths = []
+  
     
     source_path = Path(source_folder)
     if not source_path.exists():
@@ -53,9 +54,8 @@ def create_dataset(source_folder, output_file, max_files=None):
                     print(f"Warning: No 'embedding_data' in {file_path.name}, skipping this file.")
                     continue
                 
-                if len(metrics) > max_length:
-                    max_length = len(metrics)
-                    
+                lengths.append(len(metrics))
+               
                 dataset.append(np.array(metrics, dtype=np.float32))
                 sourceIDs.append(data.get("id"))
                          
@@ -71,19 +71,26 @@ def create_dataset(source_folder, output_file, max_files=None):
     lengths = np.array([len(track) for track in dataset])
     index_array = np.cumsum(lengths[:-1])
         
+    max_length = np.max(lengths)
+    min_length = np.min(lengths)
+    avg_length = np.mean(lengths)
+    std_dev_length = np.std(lengths)
     
     np.savez_compressed(output_file, data=flattened_dataset, indices=index_array, ids=sourceIDs)
 
     print(f"Success! Created a dataset with {len(dataset)} flattened rows.")
     print(f"Max embedding length: {max_length}")
+    print(f"Min embedding length: {min_length}")
+    print(f"Average embedding length: {avg_length}")
+    print(f"Standard deviation of embedding length: {std_dev_length}")
     print(f"Files without 'embedding_data': {no_embedding_count}")
     print(f"Files with invalid fitness data: {invalid_fitness_count}")
 
 if __name__ == "__main__":
-    SOURCE_DIR = 'data/voronoi/fitted'
+    SOURCE_DIR = 'data/voronoi tita winded/fitted'
     # Changed extension to .npz
     OUTPUT_DIR = 'mapelite/embeddings/datasets/'
-    OUTPUT_NAME = 'dataset20k_mixedRng_tita.npz'
+    OUTPUT_NAME = 'dataset20k_mixedRng_tita_winded.npz'
 
     # Ensure output directory exists
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)

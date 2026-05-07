@@ -1,4 +1,4 @@
-"""Training loop and helpers for the metrics VAE."""
+﻿"""Training loop and helpers for the metrics VAE."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import torch
 from torch.amp import GradScaler, autocast
 from tqdm.auto import tqdm
 
-from mapelite.vae.losses import vae_loss
+from mapelite.vae.losses import shift_invariant_vae_loss_fn as vae_loss
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -30,6 +30,8 @@ class TrainingConfig:
     max_beta: float = 1.0
     ratio: float = 0.5
 
+    dim_weights: torch.Tensor | None = None
+
     @classmethod
     def from_dict(cls, d: dict) -> "TrainingConfig":
         """Build from the legacy ``parameters`` dict format."""
@@ -41,6 +43,7 @@ class TrainingConfig:
             n_cycles=kld.get("n_cycles", 4),
             max_beta=kld.get("max_beta", 1.0),
             ratio=kld.get("ratio", 0.5),
+            dim_weights=d.get("dim_weights", None),
         )
 
 
@@ -91,9 +94,9 @@ class VAETrainer:
 
     Parameters
     ----------
-    model  : nn.Module     – a ``MetricsTransformerVAE`` (or compatible).
-    config : TrainingConfig – hyper-parameters.
-    device : torch.device   – target device.
+    model  : nn.Module       A ``MetricsTransformerVAE`` (or compatible).
+    config : TrainingConfig  Hyper-parameters.
+    device : torch.device    Target device.
     """
 
     def __init__(self, model, config: TrainingConfig, device):
@@ -101,6 +104,9 @@ class VAETrainer:
         self.device = device
         self.config = config
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='min', factor=0.5, patience=60, min_lr=1e-5
+        )
         self.use_amp = device.type == "cuda"
         self.scaler = GradScaler("cuda", enabled=self.use_amp)
         self.early_stopper = EarlyStopper(
@@ -124,12 +130,16 @@ class VAETrainer:
             train_stats = self._train_epoch(train_loader, beta, epoch)
             val_stats = self._validate_epoch(val_loader, beta)
 
+            self.scheduler.step(val_stats["recon"])
+
+            current_lr = self.optimizer.param_groups[0]["lr"]
+            print(f"  LR: {current_lr:.2e}")
+
             self._update_history(train_stats, val_stats, beta)
 
-            if beta == cfg.max_beta:
-                if self.early_stopper.check(val_stats["recon"], self.model, epoch):
-                    print(f"\nEarly stopping triggered at epoch {epoch + 1}")
-                    break
+            if self.early_stopper.check(val_stats["recon"], self.model, epoch):
+                print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                break
 
             epoch_bar.set_postfix({
                 "T_Loss": f"{train_stats['total']:.2f}",
@@ -178,7 +188,7 @@ class VAETrainer:
             with autocast("cuda", enabled=self.use_amp):
                 recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
                 loss, recon, kld = vae_loss(
-                    recon_x, data, mu, log_var, mask=mask, beta=beta
+                    recon_x, data, mu, log_var, mask=mask, beta=beta, dim_weights=cfg.dim_weights
                 )
 
             self.scaler.scale(loss).backward()
@@ -207,7 +217,7 @@ class VAETrainer:
             with autocast("cuda", enabled=self.use_amp):
                 recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
                 loss, recon, kld = vae_loss(
-                    recon_x, data, mu, log_var, mask=mask, beta=beta
+                    recon_x, data, mu, log_var, mask=mask, beta=beta, dim_weights=self.config.dim_weights
                 )
             stats["recon"] += recon.item()
             stats["kld"] += kld.item()

@@ -48,11 +48,11 @@ def load_and_preprocess_data(path):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate original track embeddings from VAE")
-    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita_winded.npz", 
+    parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita_winded_trackSize1-10.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_circular_1.pth", 
+    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_circular_4.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_1.npz", 
+    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_4.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")
@@ -70,7 +70,7 @@ def main():
     model.eval()
     
     # 3. Prepare Loader
-    dataset = MetricsDataset(metrics_list, n_shifts=0)
+    dataset = MetricsDataset(metrics_list)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
     
     # 4. Generate Embeddings

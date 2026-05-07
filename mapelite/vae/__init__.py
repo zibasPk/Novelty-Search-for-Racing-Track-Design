@@ -1,29 +1,30 @@
-"""mapelite.vae – cleanly separated VAE components.
+﻿"""mapelite.vae - cleanly separated VAE components.
 
 Public API
 ----------
 Model:
-    MetricsTransformerVAE  – circular-convolution VAE architecture.
+    MetricsTransformerVAE  - circular-convolution VAE architecture.
 
 Data:
-    MetricsDataset         – PyTorch dataset for variable-length metrics.
+    MetricsDataset         - PyTorch dataset for variable-length metrics.
 Training:
-    VAETrainer             – encapsulated training loop.
-    TrainingConfig         – hyper-parameter dataclass.
-    EarlyStopper           – patience-based early stopping.
+    VAETrainer             - encapsulated training loop.
+    TrainingConfig         - hyper-parameter dataclass.
+    EarlyStopper           - patience-based early stopping.
 
 Preprocessing:
-    MetricsPreprocessor    – raw telemetry → model-ready features.
+    MetricsPreprocessor    - raw telemetry -> model-ready features.
 
 Loss:
-    vae_loss               – reconstruction + β·KLD loss function.
+    vae_loss               - reconstruction + beta*KLD loss function.
+    shift_invariant_vae_loss_fn - Shift invariant VAE loss using CC.
 """
 
 from mapelite.vae.model import MetricsTransformerVAE
 from mapelite.vae.data import MetricsDataset
 from mapelite.vae.training import VAETrainer, TrainingConfig, EarlyStopper
 from mapelite.vae.preprocessing import MetricsPreprocessor
-from mapelite.vae.losses import vae_loss
+from mapelite.vae.losses import vae_loss, shift_invariant_vae_loss_fn
 
 __all__ = [
     "MetricsTransformerVAE",
@@ -33,4 +34,5 @@ __all__ = [
     "EarlyStopper",
     "MetricsPreprocessor",
     "vae_loss",
+    "shift_invariant_vae_loss_fn",
 ]
