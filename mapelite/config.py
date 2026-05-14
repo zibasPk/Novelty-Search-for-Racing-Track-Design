@@ -38,7 +38,7 @@ REMAPPING_EVERY = 100  # remap archive every N iterations
 BUFFER_SIZE = 1000  # keep last 1000 solutions
 
 NS_KNN = 15  # for kNN novelty calculation
-
+ARCHIVE_THRESHOLD = 5.5
 
 # --- Checkpointing and Debugging ---
 CHECKPOINT_EVERY = 50
@@ -46,8 +46,8 @@ DEBUG_CROSSOVER = True
 DEBUG_MUTATION = True
 
 # --- Directories ---
-EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_1.pth"
-PRECOMPILED_EMBEDDINGS_PATH = "mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_1.npz"
+EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_5.pth"
+PRECOMPILED_EMBEDDINGS_PATH = "mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_5.npz"
 CVT_DIR = "data/cvt/"
 NS_DIR = "data/ns/"
 CHECKPOINT_DIR = "checkpoints/"

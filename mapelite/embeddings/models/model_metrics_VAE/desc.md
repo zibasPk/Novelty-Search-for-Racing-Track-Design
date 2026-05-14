@@ -50,3 +50,12 @@ Changes from model_metrics_VAE_mixRng_tita_circular_2.pth:
 ### model_metrics_VAE_mixRng_tita_circular_4.pth
 kaggle name: "no max_beta check for EarlyStopping"
 - Fixes issues with padding , adds positional encoding, uses ChannelLayerNorm instead of batchnorm, removes max_beta check from EarlyStopping
+
+### model_metrics_VAE_mixRng_tita_circular_5.pth
+kaggle name: "standard trackSize"
+- uses standard track size (between 4 and 10) so the dataset20k_mixedRng_tita_winded.npz
+
+### model_metrics_VAE_mixRng_tita_circular_6.pth
+kaggle name: "n_layers=5"
+- Complete revamp and refinement of the architecture, best performing model so far.
+
