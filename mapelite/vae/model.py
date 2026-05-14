@@ -10,232 +10,280 @@ import torch.nn as nn
 class SinusoidalPositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super().__init__()
+        
+        # Create a matrix of [max_len, d_model]
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model)
-        )
+        
+        # The denominator term (10000^(2i/d_model))
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        # Fill sine for even indices, cosine for odd indices
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
+        
+        # Add a batch dimension: [1, max_len, d_model]
         pe = pe.unsqueeze(0)
-        self.register_buffer("pe", pe)
+        
+        # register_buffer ensures this is saved with the model but not trained as a weight
+        self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return x + self.pe[:, : x.size(1), :]
-
+        # x shape: [Batch, Seq_Len, Hidden_Dim]
+        # Add the encoding to the input
+        return x + self.pe[:, :x.size(1), :]
 
 class CircularConv1d(nn.Module):
-    """Conv1d with circular wrap-around padding and preserved sequence length."""
-
     def __init__(self, in_channels, out_channels, kernel_size, dilation=1):
         super().__init__()
         self.pad = (kernel_size - 1) * dilation
         self.conv = nn.Conv1d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            padding=0,
-            dilation=dilation,
+            in_channels, out_channels, kernel_size,
+            padding=0, dilation=dilation
         )
 
     def forward(self, x, lengths=None):
+        B, C, T = x.shape
+    
         if lengths is not None:
-            B, C, T = x.shape
-            start_idx = lengths.unsqueeze(1) - self.pad
-            seq_idx = start_idx + torch.arange(self.pad, device=x.device)
-            valid_mask = (seq_idx >= 0).unsqueeze(1)
-            safe_idx = seq_idx.clamp(min=0)
-            safe_idx_expanded = safe_idx.unsqueeze(1).expand(-1, C, -1)
-            wrap = torch.gather(x, dim=2, index=safe_idx_expanded)
-            wrap = wrap * valid_mask.float()
+            assert (lengths > 0).all(), "CircularConv1d requires all sequence lengths > 0"
+            # (lengths[b] - pad + k) % lengths[b] for k in 0..pad-1
+            # When lengths >= pad: identical to the old "slice from tail" behaviour
+            # When lengths < pad:  modulo causes the sequence to repeat, e.g.
+            #   length=3, pad=5  →  indices [1, 2, 0, 1, 2] instead of [0, 0, 0, 1, 2]
+            start = lengths.unsqueeze(1) - self.pad                         # [B, 1]
+            seq   = start + torch.arange(self.pad, device=x.device)        # [B, pad]
+            safe  = seq % lengths.unsqueeze(1)                             # [B, pad]
+            wrap  = torch.gather(
+                x, dim=2,
+                index=safe.unsqueeze(1).expand(-1, C, -1)                  # [B, C, pad]
+            )
         else:
-            wrap = x[:, :, -self.pad:]
-
-        x = torch.cat([wrap, x], dim=2)
-        return self.conv(x)
-
-
+            # Unmasked / inference path — same fix so it holds when T < pad too.
+            # Without this, x[:, :, -pad:] silently returns fewer than pad elements
+            # when T < pad, making the cat the wrong length and breaking the conv.
+            seq  = torch.arange(T - self.pad, T, device=x.device) % T     # [pad]
+            wrap = torch.gather(
+                x, dim=2,
+                index=seq.view(1, 1, -1).expand(B, C, -1)                 # [B, C, pad]
+            )
+    
+        return self.conv(torch.cat([wrap, x], dim=2))
 class ChannelLayerNorm(nn.Module):
+    """Applies LayerNorm across the channel dimension for (B, C, T) tensors."""
     def __init__(self, channels):
         super().__init__()
         self.norm = nn.LayerNorm(channels)
 
     def forward(self, x):
+        # Transpose to [B, T, C], normalize, transpose back to [B, C, T]
         x = x.transpose(1, 2)
         x = self.norm(x)
         return x.transpose(1, 2)
-
-
+        
 class CircularResBlock(nn.Module):
-    """Residual block with two circular convolutions."""
-
     def __init__(self, channels, kernel_size=7, dilation=1):
         super().__init__()
         self.conv1 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
         self.conv2 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
-        self.norm1 = ChannelLayerNorm(channels)
-        self.norm2 = ChannelLayerNorm(channels)
-        self.act = nn.GELU()
+        self.norm1  = ChannelLayerNorm(channels)
+        self.norm2  = ChannelLayerNorm(channels)
+        self.act    = nn.GELU()
 
-    def forward(self, x, lengths=None, valid=None):
-        residual = x
-        x = self.act(self.norm1(self.conv1(x, lengths)))
+    def forward(self, x, lengths=None, valid=None):   # <-- accept valid mask
         if valid is not None:
             x = x * valid
+            
+        residual = x
+        x = self.act(self.norm1(self.conv1(x, lengths)))
+        
+        # Since ChannelLayerNorm could create non zero values in padded areas
+        if valid is not None:
+            x = x * valid # reapply mask
+            
         x = self.norm2(self.conv2(x, lengths))
-        return self.act(x + residual)
+        
+        if valid is not None:
+            x = x * valid
+        return x + residual
 
 
 class CircularCNNDecoder(nn.Module):
-    def __init__(self, latent_dim, hidden_dim, output_dim, n_layers=4, kernel_size=7):
+    """
+    Mirrors the encoder: broadcast z across time, then refine
+    with circular ResBlocks in reverse dilation order.
+    
+    Shift-equivariant by construction — consistent with the encoder.
+    """
+    def __init__(self, latent_dim, hidden_dim, output_dim, 
+                 n_layers=4, kernel_size=7, max_seq_len = 5000):
         super().__init__()
         self.fc = nn.Linear(latent_dim, hidden_dim)
-        self.pe = SinusoidalPositionalEncoding(hidden_dim, max_len=5000)
 
-        self.conv_blocks = nn.ModuleList(
-            [
-                CircularResBlock(
-                    hidden_dim,
-                    kernel_size=kernel_size,
-                    dilation=2 ** (n_layers - 1 - i),
-                )
-                for i in range(n_layers)
-            ]
-        )
+        self.pe = SinusoidalPositionalEncoding(hidden_dim, max_len=max_seq_len)
+        
+        # Reverse dilation order: 8,4,2,1 — coarse-to-fine refinement
+        self.conv_blocks = nn.ModuleList([
+            CircularResBlock(
+                hidden_dim, 
+                kernel_size=kernel_size, 
+                dilation=2 ** (n_layers - 1 - i)
+            )
+            for i in range(n_layers)
+        ])
         self.final_projection = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, z, seq_len, src_key_padding_mask=None):
         h = self.fc(z)
         h = h.unsqueeze(-1).expand(-1, -1, seq_len)
 
-        h = h.transpose(1, 2)
-        h = self.pe(h)
-        h = h.transpose(1, 2)
-
+        # Inject Time Signal
+        h = h.transpose(1, 2)  # To [B, T, C] for PE
+        h = self.pe(h)         # Add PE
+        h = h.transpose(1, 2)  # Back to [B, C, T] for Convs
+    
         if src_key_padding_mask is not None:
-            valid = (~src_key_padding_mask).unsqueeze(1).float()
-            lengths = (~src_key_padding_mask).sum(dim=1)
+            valid   = (~src_key_padding_mask).unsqueeze(1).float()
+            lengths = (~src_key_padding_mask).sum(dim=1)             # <-- NEW
         else:
             lengths = None
             valid = None
-
+    
         for block in self.conv_blocks:
-            if valid is not None:
-                h = h * valid
             h = block(h, lengths, valid)
-
-        if valid is not None:
-            h = h * valid
-
+    
         h = h.transpose(1, 2)
-        return self.final_projection(h)
+        raw_output = self.final_projection(h)
 
+        # Slice the tensor by feature and apply the correct physical bounds
+        speed = torch.sigmoid(raw_output[:, :, 0:1])
+        steer = torch.tanh(raw_output[:, :, 1:2]) * 0.5
+        pos   = torch.tanh(raw_output[:, :, 2:3]) * 0.5
 
-class MetricsTransformerVAE(nn.Module):
-    """Shift-invariant circular CNN VAE for variable-length metrics."""
+        final_output = torch.cat([speed, steer, pos], dim=2)
+        
+        if src_key_padding_mask is not None:
+            final_output = final_output * valid.transpose(1, 2)
 
-    def __init__(
-        self,
-        input_dim=3,
-        hidden_dim=128,
-        latent_dim=32,
-        n_layers=4,
-        n_heads=8,
-        max_seq_len=5000,
-        kernel_size=7,
-    ):
+        return final_output
+
+class MetricsVAE(nn.Module):
+    """
+    Encoder:  Linear projection → stacked CircularResBlocks → GlobalAvgPool
+              → fc_mu / fc_var
+              Shift invariance is guaranteed by construction: no contrastive
+              loss needed.
+
+    Decoder:  Identical to your original Transformer decoder.
+              Reconstructs in the time domain given z and seq_len.
+    """
+    def __init__(self, input_dim=3, hidden_dim=128, latent_dim=32,
+                 n_layers=4, kernel_size=7, max_seq_len=5000):
         super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.latent_dim = latent_dim
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.max_seq_len = max_seq_len
-        self.kernel_size = kernel_size
 
+        self.hidden_dim  = hidden_dim
+        self.latent_dim  = latent_dim
+        self.n_layers    = n_layers
+        self.max_seq_len = max_seq_len
+
+        # ── Encoder ──────────────────────────────────────────────────────────
+        # Project each timestep's features into hidden_dim channels
         self.input_projection = nn.Linear(input_dim, hidden_dim)
 
-        self.conv_blocks = nn.ModuleList(
-            [
-                CircularResBlock(hidden_dim, kernel_size=kernel_size, dilation=2**i)
-                for i in range(n_layers)
-            ]
-        )
+        # Exponentially increasing dilation: receptive field grows as 1,2,4,8,...
+        # With kernel=7 and 4 layers: RF = 1 + 2*(7-1)*(1+2+4+8) = 181 timesteps
+        self.conv_blocks = nn.ModuleList([
+            CircularResBlock(hidden_dim, kernel_size=kernel_size, dilation=2**i)
+            for i in range(n_layers)
+        ])
 
-        self.pool = nn.AdaptiveAvgPool1d(1)
-
-        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+        # Global average pool: collapses T → 1, making output shift-invariant
+        self.fc_mu  = nn.Linear(hidden_dim, latent_dim)
         self.fc_var = nn.Linear(hidden_dim, latent_dim)
 
+        # This prevents the massive KLD explosion in Epoch 1
         nn.init.constant_(self.fc_var.bias, -2.0)
         nn.init.orthogonal_(self.fc_var.weight, gain=0.01)
 
+        # ── Decoder ──
         self.decoder = CircularCNNDecoder(
             latent_dim=latent_dim,
             hidden_dim=hidden_dim,
             output_dim=input_dim,
             n_layers=n_layers,
             kernel_size=kernel_size,
+            max_seq_len = max_seq_len
         )
 
     @classmethod
     def load_pretrained(cls, path, device):
+        """Load a checkpoint saved with ``torch.save({'config': …, 'state_dict': …, 'parameters': …})``."""
+        import os
+        import torch
+        
         print(f"Loading model from {path}...")
         if not os.path.exists(path):
             raise FileNotFoundError(f"Model file not found at {path}")
 
         checkpoint = torch.load(path, map_location=device)
         config = checkpoint["config"]
+        
+        # Load the training parameters/hyperparameters saved in the checkpoint
+        # Using .get() ensures it won't crash if loading an older checkpoint without them
+        params = checkpoint.get("parameters", {})
 
+        # Initialize the new MetricsCircularVAE using the saved config
         model = cls(
             input_dim=config["input_dim"],
             hidden_dim=config["hidden_dim"],
             latent_dim=config["latent_dim"],
             n_layers=config.get("n_layers", 4),
-            n_heads=config.get("n_heads", 8),
             max_seq_len=config.get("max_seq_len", 5000),
             kernel_size=config.get("kernel_size", 7),
         )
+        
         model.load_state_dict(checkpoint["state_dict"])
         model.to(device)
+        model.eval()
 
         print(f"Model loaded with latent_dim={config['latent_dim']}")
-        return model, config["latent_dim"]
+        
+        return model, config["latent_dim"], params
 
+    # ── Encoder ──────────────────────────────────────────────────────────────
     def encode(self, x, src_key_padding_mask=None):
         h = self.input_projection(x)
         h = h.transpose(1, 2)
-
+    
         if src_key_padding_mask is not None:
-            valid = (~src_key_padding_mask).unsqueeze(1).float()
-            lengths = (~src_key_padding_mask).sum(dim=1)
+            valid   = (~src_key_padding_mask).unsqueeze(1).float()   # [B, 1, T]
+            lengths = (~src_key_padding_mask).sum(dim=1)             # [B]  <-- NEW
         else:
             lengths = None
             valid = None
-
+    
         for block in self.conv_blocks:
-            if valid is not None:
-                h = h * valid
             h = block(h, lengths, valid)
 
-        if valid is not None:
-            lengths_f = lengths.float().unsqueeze(1)
+        # masked/ unmasked avg pooling
+        if src_key_padding_mask is not None:
+            lengths_f = lengths.float().unsqueeze(1)                 # [B, 1]
             h = (h * valid).sum(dim=2) / (lengths_f + 1e-9)
         else:
             h = h.mean(dim=2)
-
+    
         return self.fc_mu(h), self.fc_var(h)
+
+    # ── Decoder ──────────────────────────────────────────────────────────────
+    def decode(self, z, seq_len, src_key_padding_mask=None):
+        return self.decoder(z, seq_len, src_key_padding_mask)
 
     def reparameterize(self, mu, log_var):
         std = torch.exp(0.5 * log_var)
         return mu + std * torch.randn_like(std)
 
-    def decode(self, z, seq_len, src_key_padding_mask=None):
-        return self.decoder(z, seq_len, src_key_padding_mask)
-
     def forward(self, x, src_key_padding_mask=None):
         mu, log_var = self.encode(x, src_key_padding_mask)
-        z = self.reparameterize(mu, log_var)
-        recon_x = self.decode(z, x.shape[1], src_key_padding_mask)
-        return recon_x, mu, log_var
-
+        z           = self.reparameterize(mu, log_var)
+        recon       = self.decode(z, x.shape[1], src_key_padding_mask)
+        return recon, mu, log_var

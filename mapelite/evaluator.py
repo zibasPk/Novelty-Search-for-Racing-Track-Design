@@ -5,7 +5,7 @@ import requests
 from mapelite.logging_config import get_logger
 import torch
 
-from mapelite.vae import MetricsTransformerVAE, MetricsPreprocessor
+from mapelite.vae import MetricsVAE, MetricsPreprocessor
 from mapelite.utils import solution_to_array, is_valid_solution_array
 from abc import ABC, abstractmethod
 from mapelite.config import (
@@ -50,7 +50,7 @@ class EvaluatorMetrics(Evaluator):
             raise FileNotFoundError(f"Model file not found at {path}")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        embedding_model, embedding_dim = MetricsTransformerVAE.load_pretrained(path, device)
+        embedding_model, embedding_dim, params = MetricsVAE.load_pretrained(path, device)
         
         return cls(embedding_model, embedding_dim, device)
 

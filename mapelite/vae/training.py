@@ -9,7 +9,7 @@ import torch
 from torch.amp import GradScaler, autocast
 from tqdm.auto import tqdm
 
-from mapelite.vae.losses import shift_invariant_vae_loss_fn as vae_loss
+from mapelite.vae.losses import vae_loss
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -19,31 +19,41 @@ from mapelite.vae.losses import shift_invariant_vae_loss_fn as vae_loss
 class TrainingConfig:
     """All hyper-parameters consumed by :class:`VAETrainer`."""
 
-    lr: float = 1e-3
-    epochs: int = 100
-    patience: int = 5
+    lr: float = 5e-4
+    epochs: int = 700
+    patience: int = 50
     min_delta: float = 0.01
     max_grad_norm: float = 0.5
 
     # Cyclical KLD annealing
-    n_cycles: int = 4
-    max_beta: float = 1.0
-    ratio: float = 0.5
+    n_cycles: int = 1
+    max_beta: float = 0.02
+    ratio: float = 0.3
 
+    # LR Scheduler
+    lr_factor: float = 0.5
+    lr_patience: int = 25
+    min_lr: float = 1e-5
+
+    # Loss Configuration
     dim_weights: torch.Tensor | None = None
 
     @classmethod
-    def from_dict(cls, d: dict) -> "TrainingConfig":
+    def from_dict(cls, d: dict, dim_weights: torch.Tensor | None = None) -> "TrainingConfig":
         """Build from the legacy ``parameters`` dict format."""
         kld = d.get("kld", {})
+        lr_schedule = d.get("lr_schedule", {})
         return cls(
-            lr=d.get("lr", 1e-3),
-            epochs=d.get("epochs", 100),
-            patience=d.get("patience", 5),
-            n_cycles=kld.get("n_cycles", 4),
-            max_beta=kld.get("max_beta", 1.0),
-            ratio=kld.get("ratio", 0.5),
-            dim_weights=d.get("dim_weights", None),
+            lr=d.get("lr", 5e-4),
+            epochs=d.get("epochs", 700),
+            patience=d.get("patience", 50),
+            n_cycles=kld.get("n_cycles", 1),
+            max_beta=kld.get("max_beta", 0.02),
+            ratio=kld.get("ratio", 0.3),
+            lr_factor=lr_schedule.get("factor", 0.5),
+            lr_patience=lr_schedule.get("patience", 25),
+            min_lr=lr_schedule.get("min_lr", 1e-5),
+            dim_weights=dim_weights if dim_weights is not None else d.get("dim_weights")
         )
 
 
@@ -94,9 +104,9 @@ class VAETrainer:
 
     Parameters
     ----------
-    model  : nn.Module       A ``MetricsTransformerVAE`` (or compatible).
-    config : TrainingConfig  Hyper-parameters.
-    device : torch.device    Target device.
+    model  : nn.Module     – a ``MetricsCircularVAE`` (or compatible).
+    config : TrainingConfig – hyper-parameters.
+    device : torch.device   – target device.
     """
 
     def __init__(self, model, config: TrainingConfig, device):
@@ -105,14 +115,18 @@ class VAETrainer:
         self.config = config
         self.optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=60, min_lr=1e-5
+            self.optimizer, 
+            mode='min', 
+            factor=config.lr_factor,
+            patience=config.lr_patience,  
+            min_lr=config.min_lr
         )
         self.use_amp = device.type == "cuda"
         self.scaler = GradScaler("cuda", enabled=self.use_amp)
         self.early_stopper = EarlyStopper(
             patience=config.patience, min_delta=config.min_delta
         )
-        self.history: dict[str, list] = {
+        self.history: dict[str, list | int] = {
             "total_loss": [],   "recon_loss": [],   "kld_loss": [],
             "val_total_loss": [], "val_recon_loss": [], "val_kld_loss": [],
             "beta": [],
@@ -120,7 +134,7 @@ class VAETrainer:
 
     # -- public API -----------------------------------------------------------
 
-    def fit(self, train_loader, val_loader) -> dict[str, list]:
+    def fit(self, train_loader, val_loader) -> dict[str, list | int]:
         """Run the full training loop. Returns the history dict."""
         cfg = self.config
         epoch_bar = tqdm(range(cfg.epochs), desc="Overall Progress", position=0)
@@ -130,10 +144,8 @@ class VAETrainer:
             train_stats = self._train_epoch(train_loader, beta, epoch)
             val_stats = self._validate_epoch(val_loader, beta)
 
-            self.scheduler.step(val_stats["recon"])
-
-            current_lr = self.optimizer.param_groups[0]["lr"]
-            print(f"  LR: {current_lr:.2e}")
+            self.scheduler.step(val_stats['recon'])
+            current_lr = self.optimizer.param_groups[0]['lr']
 
             self._update_history(train_stats, val_stats, beta)
 
@@ -142,21 +154,21 @@ class VAETrainer:
                 break
 
             epoch_bar.set_postfix({
-                "T_Loss": f"{train_stats['total']:.2f}",
-                "V_Loss": f"{val_stats['total']:.2f}",
+                "T_Loss": f"{train_stats['total']:.4f}",
+                "V_Loss": f"{val_stats['total']:.4f}",
                 "Beta":   f"{beta:.3f}",
             })
             print(
-                f"Epoch {epoch + 1}:\n "
-                f"Train Loss {train_stats['total']:.4f} "
-                f"(Recon: {train_stats['recon']:.4f}) "
-                f"|(kld: {train_stats['kld']:.4f})\n "
-                f"Val Loss {val_stats['total']:.4f} "
-                f"(Recon: {val_stats['recon']:.4f}) "
-                f"|(kld: {val_stats['kld']:.4f})"
+                f"Epoch {epoch + 1}:\n"
+                f"  Train — total: {train_stats['total']:.4f} | "
+                f"recon: {train_stats['recon']:.4f} | kld: {train_stats['kld']:.4f}\n"
+                f"  Val   — total: {val_stats['total']:.4f} | "
+                f"recon: {val_stats['recon']:.4f} | kld: {val_stats['kld']:.4f}\n"
+                f"  LR: {current_lr:.2e}"
             )
 
         self.model = self.early_stopper.load_best_weights(self.model)
+        self.history['best_epoch'] = self.early_stopper.best_model_epoch
         return self.history
 
     # -- private helpers ------------------------------------------------------
@@ -202,7 +214,11 @@ class VAETrainer:
             stats["recon"] += recon.item()
             stats["kld"] += kld.item()
             stats["total"] += loss.item()
-            batch_bar.set_postfix({"loss": f"{loss.item():.2f}"})
+            batch_bar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "recon": f"{recon.item():.4f}",
+                "kld": f"{kld.item():.4f}"
+            })
 
         n = len(loader)
         return {k: v / n for k, v in stats.items()}
@@ -211,13 +227,16 @@ class VAETrainer:
     def _validate_epoch(self, loader, beta: float) -> dict:
         self.model.eval()
         stats = {"recon": 0.0, "kld": 0.0, "total": 0.0}
+        cfg = self.config
 
         for data, mask in loader:
             data, mask = data.to(self.device), mask.to(self.device)
             with autocast("cuda", enabled=self.use_amp):
-                recon_x, mu, log_var = self.model(data, src_key_padding_mask=mask)
+                # Evaluate using mu strictly (no sampling noise)
+                mu, log_var = self.model.encode(data, src_key_padding_mask=mask)
+                recon_x = self.model.decode(mu, data.shape[1], src_key_padding_mask=mask)
                 loss, recon, kld = vae_loss(
-                    recon_x, data, mu, log_var, mask=mask, beta=beta, dim_weights=self.config.dim_weights
+                    recon_x, data, mu, log_var, mask=mask, beta=beta, dim_weights=cfg.dim_weights
                 )
             stats["recon"] += recon.item()
             stats["kld"] += kld.item()

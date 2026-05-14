@@ -4,7 +4,7 @@ import argparse
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from mapelite.vae import MetricsDataset, MetricsPreprocessor, MetricsTransformerVAE
+from mapelite.vae import MetricsDataset, MetricsPreprocessor, MetricsVAE
 from mapelite.vae.data import collate_fn
 
 # ==========================================
@@ -66,7 +66,7 @@ def main():
     metrics_list, ids_list = load_and_preprocess_data(args.data)
     
     # 2. Load Model
-    model, _ = MetricsTransformerVAE.load_pretrained(args.model, device)
+    model, _ , _ = MetricsVAE.load_pretrained(args.model, device)
     model.eval()
     
     # 3. Prepare Loader
