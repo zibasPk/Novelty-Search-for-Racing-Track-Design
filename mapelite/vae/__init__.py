@@ -24,7 +24,8 @@ from mapelite.vae.model import MetricsVAE
 from mapelite.vae.data import MetricsDataset
 from mapelite.vae.training import VAETrainer, TrainingConfig, EarlyStopper
 from mapelite.vae.preprocessing import MetricsPreprocessor
-from mapelite.vae.losses import vae_loss, shift_invariant_vae_loss_fn
+from mapelite.vae.losses import vae_loss, vae_loss
+from mapelite.vae.latent_transform import LatentTransform
 
 __all__ = [
     "MetricsVAE",
@@ -33,6 +34,6 @@ __all__ = [
     "TrainingConfig",
     "EarlyStopper",
     "MetricsPreprocessor",
+    "LatentTransform",
     "vae_loss",
-    "shift_invariant_vae_loss_fn",
 ]

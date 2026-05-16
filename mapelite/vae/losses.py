@@ -2,7 +2,7 @@
 
 import torch
 
-def shift_invariant_vae_loss_fn(recon_x, x, mu, log_var, mask=None, beta=0, dim_weights=None):
+def vae_loss(recon_x, x, mu, log_var, mask=None, beta=0, dim_weights=None):
     if mask is None:
         mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
 

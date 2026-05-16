@@ -17,6 +17,7 @@ from mapelite.config import (
     RunMode
 )
 from mapelite.evaluator import EvaluatorMetrics
+from mapelite.measure_space import MeasureSpace
 from dask.distributed import Client, LocalCluster
 from ribs.archives import AddStatus
 from matplotlib.colors import LinearSegmentedColormap
@@ -137,20 +138,19 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, measure_space: MeasureSpace, grid_state=None, seed=None):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
         self.gridplot_dir = gridplot_dir
         self.seed = seed
         self._track_cache: dict = {}
-        
-        embeddings = np.load(precomp_embeddings_path)["embeddings"]
+
+        cleaned_embeddings = measure_space.get_cleaned_precomp()
         umap_m = umap.UMAP(n_components=2, random_state=seed)
-        
-        self._umap_model = umap_m.fit(embeddings)
-        self._precomp_umaps = umap_m.transform(embeddings)
-        
+        self._umap_model = umap_m.fit(cleaned_embeddings)
+        self._precomp_umaps = umap_m.transform(cleaned_embeddings)
+
         self._grid_state = grid_state if grid_state is not None else []
         self.prev_iteration_data = None
 
@@ -761,6 +761,7 @@ class QDRunner:
         checkpoint_dir,
         heatmap_dir,
         gridplot_dir,
+        measure_space: MeasureSpace,
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
@@ -774,7 +775,7 @@ class QDRunner:
         self.client = client
         self.evaluator_future = evaluator_future
         self.stats: list[dict] = stats if stats is not None else []
-        
+
         self.start_iter = start_iter
 
         self.checkpoint_dir = checkpoint_dir
@@ -782,51 +783,51 @@ class QDRunner:
         self.gridplot_dir = gridplot_dir
         self.buffer_path = buffer_path or os.path.join(
             BUFFER_DIR, "buffer.json")
-        
+
         self.seed = seed
         # Fixed centroids for WSS (CVT case). None → use archive measures (NS case).
         self.centroids = np.asarray(
             centroids) if centroids is not None else None
         self.initial_WSS = initial_WSS
         # Mutable run state
-        self.global_best_score = stats[0].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
-        self.global_best_id = stats[0].get("global_best_id") if stats else None
-        
-        # Evaluation buffer & track cache
+        self.global_best_score = stats[-1].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
+        self.global_best_id = stats[-1].get("global_best_id") if stats else None
+
+        # Evaluation buffer & visualizer
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
         self._visualizer = ArchiveVisualizer(
-            archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state = grid_state)
-        
+            archive, self.stats, heatmap_dir, gridplot_dir,
+            measure_space=measure_space, seed=seed, grid_state=grid_state)
+
         self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
         self.iteration = 0
-        
+
     @classmethod
-    def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
+    def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed, measure_space: MeasureSpace):
         instance = cls(
-            scheduler = state["scheduler"],
-            archive = state["archive"],
-            start_iter = state["start_iter"],
-            stats = state["stats"],
-            evaluator_future = evaluator_future,
-            client = client,
-            checkpoint_dir = checkpoint_dir,
-            heatmap_dir = heatmap_dir,
-            gridplot_dir = gridplot_dir,
-            buffer_path = buffer_path,
-            seed = seed,
-            centroids = getattr(state["archive"], "centroids", None),
-            initial_WSS = state["stats"][0].get("initial_WSS", None),
-            grid_state = state["stats"][-1].get("grid_state", None)
+            scheduler=state["scheduler"],
+            archive=state["archive"],
+            start_iter=state["start_iter"],
+            stats=state["stats"],
+            evaluator_future=evaluator_future,
+            client=client,
+            checkpoint_dir=checkpoint_dir,
+            heatmap_dir=heatmap_dir,
+            gridplot_dir=gridplot_dir,
+            buffer_path=buffer_path,
+            seed=seed,
+            measure_space=measure_space,
+            centroids=getattr(state["archive"], "centroids", None),
+            initial_WSS=state["stats"][0].get("initial_WSS", None),
+            grid_state=state["stats"][-1].get("grid_state", None),
         )
-        
         return instance
 
-
     @staticmethod
-    def setup_dask(batch_size=BATCH_SIZE, model_path=None):
+    def setup_dask(batch_size=BATCH_SIZE, model_path=None, precomp_embeddings_path=None):
         """Create a Dask LocalCluster and scatter the evaluator to all workers.
 
-        Returns ``(client, cluster, evaluator_future)``.
+        Returns ``(client, cluster, evaluator_future, measure_space)``.
         """
         log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
         cluster = LocalCluster(
@@ -834,11 +835,12 @@ class QDRunner:
         client = Client(cluster)
         log.debug("Dask cluster ready", dashboard=client.dashboard_link)
 
-        evaluator = EvaluatorMetrics.load_pretrained(model_path)
+        measure_space = MeasureSpace(precomp_embeddings_path)
+        evaluator = EvaluatorMetrics.load_pretrained(model_path, measure_space=measure_space)
         evaluator_future = client.scatter(evaluator, broadcast=True)
         log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
 
-        return client, cluster, evaluator_future
+        return client, cluster, evaluator_future, measure_space
 
     @staticmethod
     def get_state_from_checkpoint(checkpoint_dir):
@@ -1069,9 +1071,6 @@ class QDRunner:
 
             score_batch, measures_batch = zip(*clean_solutions)
 
-            if i == 10:
-                print("Debug breakpoint: iteration 10 reached.")
-            
             # ── Tell with add-status tracking ──
             with self._track_add_status() as (new_insertions, substitutions):
                 self.scheduler.tell(list(score_batch), list(measures_batch))

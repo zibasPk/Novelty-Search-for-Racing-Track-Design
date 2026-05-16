@@ -7,6 +7,7 @@ import torch
 
 from mapelite.vae import MetricsVAE, MetricsPreprocessor
 from mapelite.utils import solution_to_array, is_valid_solution_array
+from mapelite.measure_space import MeasureSpace
 from abc import ABC, abstractmethod
 from mapelite.config import (
     BASE_URL, INVALID_SCORE
@@ -35,24 +36,23 @@ class Evaluator(ABC):
         return float(score)
 
 class EvaluatorMetrics(Evaluator):
-    def __init__(self, embedding_model, embedding_dim, device):
+    def __init__(self, embedding_model, measure_space: MeasureSpace, device):
         self.embedding_model = embedding_model
-        self.embedding_dim = embedding_dim
         self.device = device
+        self.measure_space = measure_space
         self.preprocessor = MetricsPreprocessor()
-        # Set the model to evaluation mode
+        print(measure_space.summary())
         self.embedding_model.eval()
 
-        
     @classmethod
-    def load_pretrained(cls, path):
+    def load_pretrained(cls, path, measure_space: MeasureSpace):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Model file not found at {path}")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        embedding_model, embedding_dim, params = MetricsVAE.load_pretrained(path, device)
-        
-        return cls(embedding_model, embedding_dim, device)
+        embedding_model, _, _ = MetricsVAE.load_pretrained(path, device)
+
+        return cls(embedding_model, measure_space, device)
 
     @staticmethod
     def validate_metrics(metrics):
@@ -85,13 +85,14 @@ class EvaluatorMetrics(Evaluator):
         with torch.no_grad():
             mu, var = self.embedding_model.encode(data_tensor, None)
 
+        mu = self.measure_space.transform(mu)
         return mu.cpu().numpy()[0]
 
     def evaluate(self, sol):
         sol_id = sol.get("id", 0)
         ok = True
         msg = ""
-        measure = np.zeros((self.embedding_dim,))  # Default measure
+        measure = np.zeros((self.measure_space.measure_dim,))
         fit_score = INVALID_SCORE
         phenotype_data = None
 
