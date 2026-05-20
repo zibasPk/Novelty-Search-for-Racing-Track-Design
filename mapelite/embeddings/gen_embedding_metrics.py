@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from mapelite.vae import MetricsDataset, MetricsPreprocessor, MetricsVAE
 from mapelite.vae.data import collate_fn
+from mapelite.vae import LatentTransform
 
 # ==========================================
 # 1. Data Utilities
@@ -50,9 +51,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate original track embeddings from VAE")
     parser.add_argument("--data", type=str, default="mapelite/embeddings/datasets/dataset20k_metrics_mixedRng_tita_winded.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_circular_5.pth", 
+    parser.add_argument("--model", type=str, default="mapelite\\embeddings\\models\\model_metrics_VAE\\model_metrics_VAE_mixRng_tita_circular_7.pth", 
                         help="Path to trained .pth model")
-    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_5.npz", 
+    parser.add_argument("--output", type=str, default="mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_7.npz", 
                         help="Path to save output .npz")
     parser.add_argument("--batch_size", type=int, default=64, 
                         help="Inference batch size")
@@ -86,12 +87,19 @@ def main():
     
     original_embeddings = np.concatenate(embeddings_list, axis=0)
     print(f"Original embeddings shape: {original_embeddings.shape}")
-    
+
+    # 5. Whiten embeddings (drop dead dims + PCA-whiten), matching novelty search pipeline.
+    raw_tensor = torch.tensor(original_embeddings, dtype=torch.float32).to(device)
+    transform = LatentTransform().fit(raw_tensor)
+    print(transform.summary())
+    cleaned_embeddings = transform.transform(raw_tensor).cpu().numpy()
+    print(f"Cleaned embeddings shape: {cleaned_embeddings.shape}")
+
     save_dict = {
         'ids': ids_list,
-        'embeddings': original_embeddings,
+        'embeddings': cleaned_embeddings,
     }
-    
+
     # 6. Save
     print(f"\nSaving to {args.output}...")
     for key, val in save_dict.items():

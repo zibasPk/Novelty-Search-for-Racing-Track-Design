@@ -7,6 +7,33 @@ import torch
 import torch.nn as nn
 
 
+def normalized_dft_pool(h, lengths, K=64):
+    """DFT power pooling at K normalized frequencies (cycles/lap).
+
+    Args:
+        h:       [B, C, T] — features, padded
+        lengths: [B]        — actual sequence length per sample
+    Returns:     [B, C, K]  — power at K normalized frequencies
+    """
+    B, C, T = h.shape
+    device  = h.device
+
+    t     = torch.arange(T, device=device, dtype=torch.float32)
+    k     = torch.arange(0, K, device=device, dtype=torch.float32)
+    L     = lengths.float().clamp(min=1).view(-1, 1, 1)
+
+    phase = 2 * math.pi * k.view(1, -1, 1) * t.view(1, 1, -1) / L
+
+    valid = (t.view(1, -1) < lengths.view(-1, 1)).unsqueeze(1).float()
+    cos_b = phase.cos() * valid
+    sin_b = phase.sin() * valid
+
+    real  = torch.einsum('bct,bkt->bck', h, cos_b) / L
+    imag  = -torch.einsum('bct,bkt->bck', h, sin_b) / L
+
+    return real.pow(2) + imag.pow(2)
+
+
 class SinusoidalPositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super().__init__()
@@ -169,37 +196,36 @@ class CircularCNNDecoder(nn.Module):
 
 class MetricsVAE(nn.Module):
     """
-    Encoder:  Linear projection → stacked CircularResBlocks → GlobalAvgPool
+    Encoder:  Linear projection → stacked CircularResBlocks → DFT power pool
               → fc_mu / fc_var
               Shift invariance is guaranteed by construction: no contrastive
               loss needed.
 
-    Decoder:  Identical to your original Transformer decoder.
-              Reconstructs in the time domain given z and seq_len.
+    Decoder:  Circular CNN decoder. Reconstructs in the time domain given z
+              and seq_len.
     """
     def __init__(self, input_dim=3, hidden_dim=128, latent_dim=32,
-                 n_layers=4, kernel_size=7, max_seq_len=5000):
+                 n_layers=4, kernel_size=7, max_seq_len=5000, freq_bins=64):
         super().__init__()
 
         self.hidden_dim  = hidden_dim
         self.latent_dim  = latent_dim
         self.n_layers    = n_layers
         self.max_seq_len = max_seq_len
+        self.freq_bins   = freq_bins
 
         # ── Encoder ──────────────────────────────────────────────────────────
-        # Project each timestep's features into hidden_dim channels
         self.input_projection = nn.Linear(input_dim, hidden_dim)
 
-        # Exponentially increasing dilation: receptive field grows as 1,2,4,8,...
-        # With kernel=7 and 4 layers: RF = 1 + 2*(7-1)*(1+2+4+8) = 181 timesteps
         self.conv_blocks = nn.ModuleList([
             CircularResBlock(hidden_dim, kernel_size=kernel_size, dilation=2**i)
             for i in range(n_layers)
         ])
 
-        # Global average pool: collapses T → 1, making output shift-invariant
-        self.fc_mu  = nn.Linear(hidden_dim, latent_dim)
-        self.fc_var = nn.Linear(hidden_dim, latent_dim)
+        # DFT pool collapses T → freq_bins power values per channel
+        pool_dim = hidden_dim * freq_bins
+        self.fc_mu  = nn.Linear(pool_dim, latent_dim)
+        self.fc_var = nn.Linear(pool_dim, latent_dim)
 
         # This prevents the massive KLD explosion in Epoch 1
         nn.init.constant_(self.fc_var.bias, -2.0)
@@ -212,7 +238,7 @@ class MetricsVAE(nn.Module):
             output_dim=input_dim,
             n_layers=n_layers,
             kernel_size=kernel_size,
-            max_seq_len = max_seq_len
+            max_seq_len=max_seq_len,
         )
 
     @classmethod
@@ -232,7 +258,6 @@ class MetricsVAE(nn.Module):
         # Using .get() ensures it won't crash if loading an older checkpoint without them
         params = checkpoint.get("parameters", {})
 
-        # Initialize the new MetricsCircularVAE using the saved config
         model = cls(
             input_dim=config["input_dim"],
             hidden_dim=config["hidden_dim"],
@@ -240,6 +265,7 @@ class MetricsVAE(nn.Module):
             n_layers=config.get("n_layers", 4),
             max_seq_len=config.get("max_seq_len", 5000),
             kernel_size=config.get("kernel_size", 7),
+            freq_bins=config.get("freq_bins", 64),
         )
         
         model.load_state_dict(checkpoint["state_dict"])
@@ -254,25 +280,24 @@ class MetricsVAE(nn.Module):
     def encode(self, x, src_key_padding_mask=None):
         h = self.input_projection(x)
         h = h.transpose(1, 2)
-    
+        B, C, T = h.shape
+
         if src_key_padding_mask is not None:
-            valid   = (~src_key_padding_mask).unsqueeze(1).float()   # [B, 1, T]
-            lengths = (~src_key_padding_mask).sum(dim=1)             # [B]  <-- NEW
+            valid        = (~src_key_padding_mask).unsqueeze(1).float()
+            lengths      = (~src_key_padding_mask).sum(dim=1)
+            pool_lengths = lengths
         else:
-            lengths = None
-            valid = None
-    
+            valid        = None
+            lengths      = None
+            pool_lengths = torch.full((B,), T, device=h.device, dtype=torch.long)
+
         for block in self.conv_blocks:
             h = block(h, lengths, valid)
 
-        # masked/ unmasked avg pooling
-        if src_key_padding_mask is not None:
-            lengths_f = lengths.float().unsqueeze(1)                 # [B, 1]
-            h = (h * valid).sum(dim=2) / (lengths_f + 1e-9)
-        else:
-            h = h.mean(dim=2)
-    
-        return self.fc_mu(h), self.fc_var(h)
+        power = normalized_dft_pool(h, pool_lengths, K=self.freq_bins)
+        power = power.flatten(1)
+
+        return self.fc_mu(power), self.fc_var(power)
 
     # ── Decoder ──────────────────────────────────────────────────────────────
     def decode(self, z, seq_len, src_key_padding_mask=None):

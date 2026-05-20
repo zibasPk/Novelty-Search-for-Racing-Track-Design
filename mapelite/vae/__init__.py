@@ -3,7 +3,7 @@
 Public API
 ----------
 Model:
-    MetricsVAE  - circular-convolution VAE architecture.
+    MetricsVAE  - circular-convolution VAE with DFT frequency pooling.
 
 Data:
     MetricsDataset         - PyTorch dataset for variable-length metrics.
@@ -16,15 +16,14 @@ Preprocessing:
     MetricsPreprocessor    - raw telemetry -> model-ready features.
 
 Loss:
-    vae_loss               - reconstruction + beta*KLD loss function.
-    shift_invariant_vae_loss_fn - Shift invariant VAE loss using CC.
+    vae_loss               - shift-invariant reconstruction + beta*KLD loss.
 """
 
 from mapelite.vae.model import MetricsVAE
 from mapelite.vae.data import MetricsDataset
 from mapelite.vae.training import VAETrainer, TrainingConfig, EarlyStopper
 from mapelite.vae.preprocessing import MetricsPreprocessor
-from mapelite.vae.losses import vae_loss, vae_loss
+from mapelite.vae.losses import vae_loss
 from mapelite.vae.latent_transform import LatentTransform
 
 __all__ = [

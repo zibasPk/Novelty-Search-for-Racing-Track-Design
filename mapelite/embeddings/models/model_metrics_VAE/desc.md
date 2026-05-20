@@ -59,3 +59,6 @@ kaggle name: "standard trackSize"
 kaggle name: "n_layers=5"
 - Complete revamp and refinement of the architecture, best performing model so far.
 
+### model_metrics_VAE_mixRng_tita_circular_7.pth
+- kaggle name: "without discarding k= 0 (version 2)"
+- Changes the pooling strategy (normalized_dft_pooling) 
