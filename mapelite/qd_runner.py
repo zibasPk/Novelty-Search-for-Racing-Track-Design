@@ -10,14 +10,11 @@ from mapelite.config import (
     CHECKPOINT_EVERY,
     INVALID_SCORE,
     DEFAULT_START_ITER,
-    HEATMAP_DIR,
-    EMBEDDING_MODEL_PATH,
+    RETRAIN_EVERY,
     NS_KNN,
-    PRECOMPILED_EMBEDDINGS_PATH,
     RunMode
 )
 from mapelite.evaluator import EvaluatorMetrics
-from mapelite.measure_space import MeasureSpace
 from dask.distributed import Client, LocalCluster
 from ribs.archives import AddStatus
 from matplotlib.colors import LinearSegmentedColormap
@@ -46,15 +43,15 @@ class EvaluationBuffer:
     """Accumulates every evaluated track (id, spline data, embedding) and
     persists them to a JSON file in ``data/buffers/``.
 
-    The buffer is append-only: on resume it loads existing entries and
-    continues appending.  It is saved at every checkpoint interval and
-    once more when the loop finishes.
+    Entries are keyed by sol_id, so each id is stored only once
+    (last-write-wins on duplicate ids).  It is saved at every checkpoint
+    interval and once more when the loop finishes.
     """
 
     def __init__(self, buffer_path: str):
         self.buffer_path = buffer_path
         os.makedirs(os.path.dirname(buffer_path), exist_ok=True)
-        self.entries: list[dict] = []
+        self.entries: dict = {}
         self._load()
 
     # -- persistence ----------------------------------------------------------
@@ -64,7 +61,7 @@ class EvaluationBuffer:
         if os.path.exists(self.buffer_path):
             with open(self.buffer_path, "r") as f:
                 data = json.load(f)
-            self.entries = data.get("tracks", [])
+            self.entries = {e["id"]: e for e in data.get("tracks", [])}
             log.info("Buffer resumed", count=len(
                 self.entries), path=self.buffer_path)
         else:
@@ -75,14 +72,32 @@ class EvaluationBuffer:
         payload = {
             "total": len(self.entries),
             "timestamp": datetime.datetime.now().isoformat(),
-            "tracks": self.entries,
+            "tracks": list(self.entries.values()),
         }
         with open(self.buffer_path, "w") as f:
             json.dump(payload, f)
         log.info("Buffer saved", count=len(
             self.entries), path=self.buffer_path)
 
-    # -- recording ------------------------------------------------------------
+    def get_phenotype_data(self, sol_ids):
+        """Return phenotype data for a list of solution IDs, if available."""
+        data = []
+        for sol_id in sol_ids:
+            entry = self.entries.get(sol_id)
+            if entry and "phenotype_data" in entry:
+                data.append(entry["phenotype_data"])
+            else:
+                data.append(None)
+        return data
+
+    def clear(self):
+        """Clear the buffer and delete the file on disk."""
+        self.entries = {}
+        if os.path.exists(self.buffer_path):
+            os.remove(self.buffer_path)
+            log.info("Buffer cleared and file deleted", path=self.buffer_path)
+        else:
+            log.info("Buffer cleared (no file to delete)", path=self.buffer_path)
 
     def record(self, sol_id, sol_dict: dict, measure, score: float, ok: bool, phenotype_data=None):
         """Record a single evaluated track.
@@ -102,7 +117,7 @@ class EvaluationBuffer:
         ok : bool
             Whether the evaluation succeeded.
         """
-        entry = {
+        self.entries[sol_id] = {
             "id": sol_id,
             "dataSet": sol_dict.get("dataSet", []),
             "selectedCells": sol_dict.get("selectedCells", []),
@@ -113,7 +128,12 @@ class EvaluationBuffer:
             "valid": ok,
             "phenotype_data": phenotype_data,
         }
-        self.entries.append(entry)
+
+    def __getitem__(self, sol_id):
+        return self.entries[sol_id]
+
+    def __contains__(self, sol_id):
+        return sol_id in self.entries
 
     def __len__(self):
         return len(self.entries)
@@ -138,7 +158,7 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, measure_space: MeasureSpace, grid_state=None, seed=None):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
@@ -146,10 +166,10 @@ class ArchiveVisualizer:
         self.seed = seed
         self._track_cache: dict = {}
 
-        cleaned_embeddings = measure_space.get_cleaned_precomp()
+        embeddings = np.load(precomp_embeddings_path)["embeddings"]
         umap_m = umap.UMAP(n_components=2, random_state=seed)
-        self._umap_model = umap_m.fit(cleaned_embeddings)
-        self._precomp_umaps = umap_m.transform(cleaned_embeddings)
+        self._umap_model = umap_m.fit(embeddings)
+        self._precomp_umaps = umap_m.transform(embeddings)
 
         self._grid_state = grid_state if grid_state is not None else []
         self.prev_iteration_data = None
@@ -761,7 +781,6 @@ class QDRunner:
         checkpoint_dir,
         heatmap_dir,
         gridplot_dir,
-        measure_space: MeasureSpace,
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
@@ -790,20 +809,19 @@ class QDRunner:
             centroids) if centroids is not None else None
         self.initial_WSS = initial_WSS
         # Mutable run state
-        self.global_best_score = stats[-1].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
-        self.global_best_id = stats[-1].get("global_best_id") if stats else None
+        self.global_best_score = stats[0].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
+        self.global_best_id = stats[0].get("global_best_id") if stats else None
 
         # Evaluation buffer & visualizer
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
         self._visualizer = ArchiveVisualizer(
-            archive, self.stats, heatmap_dir, gridplot_dir,
-            measure_space=measure_space, seed=seed, grid_state=grid_state)
+            archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state=grid_state)
 
         self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
         self.iteration = 0
 
     @classmethod
-    def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed, measure_space: MeasureSpace):
+    def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
         instance = cls(
             scheduler=state["scheduler"],
             archive=state["archive"],
@@ -816,7 +834,6 @@ class QDRunner:
             gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
             seed=seed,
-            measure_space=measure_space,
             centroids=getattr(state["archive"], "centroids", None),
             initial_WSS=state["stats"][0].get("initial_WSS", None),
             grid_state=state["stats"][-1].get("grid_state", None),
@@ -824,10 +841,10 @@ class QDRunner:
         return instance
 
     @staticmethod
-    def setup_dask(batch_size=BATCH_SIZE, model_path=None, precomp_embeddings_path=None):
+    def setup_dask(batch_size=BATCH_SIZE, model_path=None):
         """Create a Dask LocalCluster and scatter the evaluator to all workers.
 
-        Returns ``(client, cluster, evaluator_future, measure_space)``.
+        Returns ``(client, cluster, evaluator_future)``.
         """
         log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
         cluster = LocalCluster(
@@ -835,12 +852,11 @@ class QDRunner:
         client = Client(cluster)
         log.debug("Dask cluster ready", dashboard=client.dashboard_link)
 
-        measure_space = MeasureSpace(precomp_embeddings_path)
-        evaluator = EvaluatorMetrics.load_pretrained(model_path, measure_space=measure_space)
+        evaluator = EvaluatorMetrics.load_pretrained(model_path)
         evaluator_future = client.scatter(evaluator, broadcast=True)
         log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
 
-        return client, cluster, evaluator_future, measure_space
+        return client, cluster, evaluator_future
 
     @staticmethod
     def get_state_from_checkpoint(checkpoint_dir):
@@ -1032,7 +1048,18 @@ class QDRunner:
                 del self.archive._store.__dict__["add"]
 
     # -- main loop ------------------------------------------------------------
-
+    def _start_retraining_routine(self):
+        # get current elites from archive
+        # finetune the VAE on these elites
+        # recalculate measures for all elites in archive with the updated VAE
+        # update the archive with the new measures (without changing fitness or solutions)
+        # update the evaluator_future with the new evaluator (with updated VAE)
+        
+        current_elites = self.archive.data()
+        elite_ids = [array_to_solution(sol)["id"] for sol in current_elites["solution"]]
+        phenotype_data = self._evaluation_buffer.get_phenotype_data(elite_ids)
+        
+        
     def run(self, total_iters, start_iter=None):
         """Execute the ask → evaluate → tell loop.
 
@@ -1042,6 +1069,11 @@ class QDRunner:
             start_iter = self.start_iter
 
         for i in range(start_iter, total_iters):
+            
+            if (i % RETRAIN_EVERY == 0) and (i != start_iter):
+                log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
+                self._start_retraining_routine()
+                
             self.iteration = i  # for tracking in add() wrapper
             sols = self.scheduler.ask()
             sol_dicts = [array_to_solution(sol) for sol in sols]

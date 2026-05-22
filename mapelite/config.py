@@ -31,14 +31,17 @@ ITERATIONS = 1000
 RANDOM_POPULATION_ITERS = 100
 BATCH_SIZE = 10
 INVALID_SCORE = -1e9
+RETRAIN_EVERY = 200
+
 
 # --- Archive Parameters ---
+REMAPPING_EVERY = 100  # remap archive every N iterations
 BUFFER_SIZE = 1000  # keep last 1000 solutions
 
 NS_KNN = 15  # for kNN novelty calculation
-ARCHIVE_THRESHOLD = 6.6
+ARCHIVE_THRESHOLD = 5.5
 # --- Checkpointing and Debugging ---
-CHECKPOINT_EVERY = 100
+CHECKPOINT_EVERY = 50
 DEBUG_CROSSOVER = True
 DEBUG_MUTATION = True
 

@@ -6,7 +6,6 @@ from tqdm import tqdm
 
 from mapelite.vae import MetricsDataset, MetricsPreprocessor, MetricsVAE
 from mapelite.vae.data import collate_fn
-from mapelite.vae import LatentTransform
 
 # ==========================================
 # 1. Data Utilities
@@ -86,18 +85,11 @@ def main():
             embeddings_list.append(mu.cpu().numpy())
     
     original_embeddings = np.concatenate(embeddings_list, axis=0)
-    print(f"Original embeddings shape: {original_embeddings.shape}")
-
-    # 5. Whiten embeddings (drop dead dims + PCA-whiten), matching novelty search pipeline.
-    raw_tensor = torch.tensor(original_embeddings, dtype=torch.float32).to(device)
-    transform = LatentTransform().fit(raw_tensor)
-    print(transform.summary())
-    cleaned_embeddings = transform.transform(raw_tensor).cpu().numpy()
-    print(f"Cleaned embeddings shape: {cleaned_embeddings.shape}")
+    print(f"Embeddings shape: {original_embeddings.shape}")
 
     save_dict = {
         'ids': ids_list,
-        'embeddings': cleaned_embeddings,
+        'embeddings': original_embeddings,
     }
 
     # 6. Save
