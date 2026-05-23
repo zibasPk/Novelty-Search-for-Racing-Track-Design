@@ -10,6 +10,10 @@ from torch.amp import GradScaler, autocast
 from tqdm.auto import tqdm
 
 from mapelite.vae.losses import vae_loss
+from mapelite.vae.config import TRAINING_CONFIG as _TC
+
+_KLD = _TC["kld"]
+_LRS = _TC["lr_schedule"]
 
 
 # ── Configuration ────────────────────────────────────────────────────────────
@@ -19,24 +23,24 @@ from mapelite.vae.losses import vae_loss
 class TrainingConfig:
     """All hyper-parameters consumed by :class:`VAETrainer`."""
 
-    lr: float = 5e-4
-    epochs: int = 700
-    patience: int = 50
-    min_delta: float = 0.01
-    max_grad_norm: float = 0.5
+    lr: float = _TC["lr"]
+    epochs: int = _TC["epochs"]
+    patience: int = _TC["patience"]
+    min_delta: float = _TC["min_delta"]
+    max_grad_norm: float = _TC["max_grad_norm"]
 
     # Cyclical KLD annealing
-    n_cycles: int = 1
-    max_beta: float = 0.02
-    ratio: float = 0.3
+    n_cycles: int = _KLD["n_cycles"]
+    max_beta: float = _KLD["max_beta"]
+    ratio: float = _KLD["ratio"]
 
     # LR Scheduler
-    lr_factor: float = 0.5
-    lr_patience: int = 25
-    min_lr: float = 1e-5
+    lr_factor: float = _LRS["factor"]
+    lr_patience: int = _LRS["patience"]
+    min_lr: float = _LRS["min_lr"]
 
     # Loss Configuration
-    dim_weights: torch.Tensor | None = None
+    dim_weights: torch.Tensor | None = _TC["dim_weights"]
 
     @classmethod
     def from_dict(cls, d: dict, dim_weights: torch.Tensor | None = None) -> "TrainingConfig":
@@ -44,15 +48,15 @@ class TrainingConfig:
         kld = d.get("kld", {})
         lr_schedule = d.get("lr_schedule", {})
         return cls(
-            lr=d.get("lr", 5e-4),
-            epochs=d.get("epochs", 700),
-            patience=d.get("patience", 50),
-            n_cycles=kld.get("n_cycles", 1),
-            max_beta=kld.get("max_beta", 0.02),
-            ratio=kld.get("ratio", 0.3),
-            lr_factor=lr_schedule.get("factor", 0.5),
-            lr_patience=lr_schedule.get("patience", 25),
-            min_lr=lr_schedule.get("min_lr", 1e-5),
+            lr=d.get("lr", _TC["lr"]),
+            epochs=d.get("epochs", _TC["epochs"]),
+            patience=d.get("patience", _TC["patience"]),
+            n_cycles=kld.get("n_cycles", _KLD["n_cycles"]),
+            max_beta=kld.get("max_beta", _KLD["max_beta"]),
+            ratio=kld.get("ratio", _KLD["ratio"]),
+            lr_factor=lr_schedule.get("factor", _LRS["factor"]),
+            lr_patience=lr_schedule.get("patience", _LRS["patience"]),
+            min_lr=lr_schedule.get("min_lr", _LRS["min_lr"]),
             dim_weights=dim_weights if dim_weights is not None else d.get("dim_weights")
         )
 

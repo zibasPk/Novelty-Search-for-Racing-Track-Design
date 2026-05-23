@@ -2,6 +2,10 @@
 
 import numpy as np
 
+from mapelite.vae.config import PREPROCESSING_CONFIG as _PC
+
+_CI = _PC["processed_col_indices"]
+
 
 class MetricsPreprocessor:
     """Preprocesses raw simulation telemetry into model-ready features.
@@ -15,16 +19,16 @@ class MetricsPreprocessor:
     as the Circular VAE handles shift invariance structurally.
     """
 
-    SPEED_IDX = 0
-    STEERING_IDX = 1
-    POS_IDX = 2
+    SPEED_IDX    = _CI["speed"]
+    STEERING_IDX = _CI["steering"]
+    POS_IDX      = _CI["position"]
 
-    MAX_SPEED = 65
-    TRACK_WIDTH = 18
+    MAX_SPEED   = _PC["max_speed"]
+    TRACK_WIDTH = _PC["track_width"]
 
     # Columns to drop: id (0), accel (3), brake (4), gear (5)
     # columns to keep: speed (1), steering (2), distanceToBorder (6)
-    DROP_COLS = [0, 3, 4, 5]
+    DROP_COLS = _PC["drop_cols"]
 
     def __call__(self, input_data: np.ndarray) -> np.ndarray:
         """Preprocess *input_data* in-place-safe fashion (copies first)."""
@@ -53,7 +57,7 @@ class MetricsPreprocessor:
         """
         if not np.isfinite(processed_metric).all():
             return False
-        if np.any(processed_metric.std(axis=0) < 1e-6):
+        if np.any(processed_metric.std(axis=0) < _PC["min_std"]):
             return False
         return True
 
@@ -61,9 +65,9 @@ class MetricsPreprocessor:
 
     @staticmethod
     def _validate_raw(data: np.ndarray) -> None:
-        if data.ndim != 2 or data.shape[1] != 7:
+        if data.ndim != 2 or data.shape[1] != _PC["raw_input_cols"]:
             raise ValueError(
-                f"Expected 2D array with 7 columns "
+                f"Expected 2D array with {_PC['raw_input_cols']} columns "
                 f"[id, Speed, Steering, Accel, Brake, Gear, distanceToBorder], "
                 f"but got shape {data.shape}"
             )
@@ -77,7 +81,7 @@ class MetricsPreprocessor:
 
     def _validate_signal(self, data: np.ndarray) -> None:
         """Ensures the selected features actually contain movement/variance."""
-        if np.any(data.std(axis=0) < 1e-6):
+        if np.any(data.std(axis=0) < _PC["min_std"]):
             raise ValueError(
                 "Input data contains static features (std < 1e-6). "
                 "The car appears to be stuck or the recording is invalid."
@@ -92,7 +96,7 @@ class MetricsPreprocessor:
         data[:, self.SPEED_IDX] = np.clip(data[:, self.SPEED_IDX], 0.0, 1.0)
 
         # Steering → scale to be between -0.5 and 0.5
-        data[:, self.STEERING_IDX] *= 0.5
+        data[:, self.STEERING_IDX] *= _PC["steering_scale"]
 
         # Position → clip to track width, centre around 0
         # Transform to: -0.5 (Left Edge) -> 0.0 (Center) -> +0.5 (Right Edge)

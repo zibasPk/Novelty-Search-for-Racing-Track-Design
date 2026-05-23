@@ -2,7 +2,11 @@
 
 import torch
 
-def vae_loss(recon_x, x, mu, log_var, mask=None, beta=0, dim_weights=None):
+from mapelite.vae.config import LOSS_CONFIG
+
+
+def vae_loss(recon_x, x, mu, log_var, mask=None,
+             beta=LOSS_CONFIG["beta"], dim_weights=LOSS_CONFIG["dim_weights"]):
     if mask is None:
         mask = torch.zeros(x.shape[:2], dtype=torch.bool, device=x.device)
 
@@ -47,7 +51,11 @@ def vae_loss(recon_x, x, mu, log_var, mask=None, beta=0, dim_weights=None):
     # Stack the list into a single tensor and average
     recon_loss = torch.stack(recon_losses).mean()
 
-    log_var_clamped = torch.clamp(log_var, min=-20.0, max=10.0)
+    log_var_clamped = torch.clamp(
+        log_var,
+        min=LOSS_CONFIG["log_var_clamp_min"],
+        max=LOSS_CONFIG["log_var_clamp_max"],
+    )
 
     # KLD Loss (Standard)
     kld_per_sample = -0.5 * torch.sum(1 + log_var_clamped - mu.pow(2) - log_var_clamped.exp(), dim=1)

@@ -6,8 +6,10 @@ import math
 import torch
 import torch.nn as nn
 
+from mapelite.vae.config import MODEL_CONFIG, MODEL_INIT
 
-def normalized_dft_pool(h, lengths, K=64):
+
+def normalized_dft_pool(h, lengths, K=MODEL_CONFIG["freq_bins"]):
     """DFT power pooling at K normalized frequencies (cycles/lap).
 
     Args:
@@ -35,7 +37,7 @@ def normalized_dft_pool(h, lengths, K=64):
 
 
 class SinusoidalPositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model, max_len=MODEL_CONFIG["max_seq_len"]):
         super().__init__()
         
         # Create a matrix of [max_len, d_model]
@@ -109,7 +111,7 @@ class ChannelLayerNorm(nn.Module):
         return x.transpose(1, 2)
         
 class CircularResBlock(nn.Module):
-    def __init__(self, channels, kernel_size=7, dilation=1):
+    def __init__(self, channels, kernel_size=MODEL_CONFIG["kernel_size"], dilation=1):
         super().__init__()
         self.conv1 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
         self.conv2 = CircularConv1d(channels, channels, kernel_size, dilation=dilation)
@@ -142,8 +144,10 @@ class CircularCNNDecoder(nn.Module):
     
     Shift-equivariant by construction — consistent with the encoder.
     """
-    def __init__(self, latent_dim, hidden_dim, output_dim, 
-                 n_layers=4, kernel_size=7, max_seq_len = 5000):
+    def __init__(self, latent_dim, hidden_dim, output_dim,
+                 n_layers=MODEL_CONFIG["n_layers"],
+                 kernel_size=MODEL_CONFIG["kernel_size"],
+                 max_seq_len=MODEL_CONFIG["max_seq_len"]):
         super().__init__()
         self.fc = nn.Linear(latent_dim, hidden_dim)
 
@@ -204,8 +208,14 @@ class MetricsVAE(nn.Module):
     Decoder:  Circular CNN decoder. Reconstructs in the time domain given z
               and seq_len.
     """
-    def __init__(self, input_dim=3, hidden_dim=128, latent_dim=32,
-                 n_layers=4, kernel_size=7, max_seq_len=5000, freq_bins=64):
+    def __init__(self,
+                 input_dim=MODEL_CONFIG["input_dim"],
+                 hidden_dim=MODEL_CONFIG["hidden_dim"],
+                 latent_dim=MODEL_CONFIG["latent_dim"],
+                 n_layers=MODEL_CONFIG["n_layers"],
+                 kernel_size=MODEL_CONFIG["kernel_size"],
+                 max_seq_len=MODEL_CONFIG["max_seq_len"],
+                 freq_bins=MODEL_CONFIG["freq_bins"]):
         super().__init__()
 
         self.hidden_dim  = hidden_dim
@@ -228,8 +238,8 @@ class MetricsVAE(nn.Module):
         self.fc_var = nn.Linear(pool_dim, latent_dim)
 
         # This prevents the massive KLD explosion in Epoch 1
-        nn.init.constant_(self.fc_var.bias, -2.0)
-        nn.init.orthogonal_(self.fc_var.weight, gain=0.01)
+        nn.init.constant_(self.fc_var.bias, MODEL_INIT["fc_var_bias_init"])
+        nn.init.orthogonal_(self.fc_var.weight, gain=MODEL_INIT["fc_var_weight_gain"])
 
         # ── Decoder ──
         self.decoder = CircularCNNDecoder(
@@ -262,10 +272,10 @@ class MetricsVAE(nn.Module):
             input_dim=config["input_dim"],
             hidden_dim=config["hidden_dim"],
             latent_dim=config["latent_dim"],
-            n_layers=config.get("n_layers", 4),
-            max_seq_len=config.get("max_seq_len", 5000),
-            kernel_size=config.get("kernel_size", 7),
-            freq_bins=config.get("freq_bins", 64),
+            n_layers=config.get("n_layers", MODEL_CONFIG["n_layers"]),
+            max_seq_len=config.get("max_seq_len", MODEL_CONFIG["max_seq_len"]),
+            kernel_size=config.get("kernel_size", MODEL_CONFIG["kernel_size"]),
+            freq_bins=config.get("freq_bins", MODEL_CONFIG["freq_bins"]),
         )
         
         model.load_state_dict(checkpoint["state_dict"])
