@@ -13,10 +13,14 @@ from mapelite.config import (
     DEFAULT_START_ITER,
     RETRAIN_EVERY,
     NS_KNN,
+    MEASURE_DIM,
     RunMode
 )
 from mapelite.evaluator import EvaluatorMetrics
 from mapelite.archive_visualizer import ArchiveVisualizer
+from mapelite.vae import MetricsVAE, MetricsPreprocessor
+from mapelite.logging_config import get_logger
+
 from dask.distributed import Client, LocalCluster
 import numpy as np
 from numpy_groupies import aggregate_nb as aggregate
@@ -26,7 +30,6 @@ import pickle
 import datetime
 import json
 import joblib
-from mapelite.logging_config import get_logger
 from contextlib import contextmanager
 from sklearn.neighbors import NearestNeighbors
 
@@ -169,11 +172,11 @@ class QDRunner:
         self,
         scheduler,
         archive,
-        client,
-        evaluator_future,
         checkpoint_dir,
         heatmap_dir,
         gridplot_dir,
+        pretrained_model_path=None,
+        do_retraining=False,
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
@@ -184,10 +187,10 @@ class QDRunner:
     ):
         self.scheduler = scheduler
         self.archive = archive
-        self.client = client
-        self.evaluator_future = evaluator_future
+ 
         self.stats: list[dict] = stats if stats is not None else []
 
+        self.do_retraining = do_retraining
         self.start_iter = start_iter
 
         self.checkpoint_dir = checkpoint_dir
@@ -204,6 +207,7 @@ class QDRunner:
         # Mutable run state
         self.global_best_score = stats[0].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
         self.global_best_id = stats[0].get("global_best_id") if stats else None
+        self.iteration = 0
 
         # Evaluation buffer & visualizer
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
@@ -211,17 +215,34 @@ class QDRunner:
             archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state=grid_state)
 
         self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
-        self.iteration = 0
+        self._embedding_model = None 
+        self.use_finetuning = do_retraining
+        if do_retraining:
+            log.info("Retraining enabled: will finetune evaluator on elites every "
+                     f"{RETRAIN_EVERY} iterations and recalculate measures for all archived elites.")
+            if pretrained_model_path is not None:
+                client, cluster, evaluator_future, self._embedding_model = self.setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
+            else:
+                log.info("No pretrained model path provided for retraining mode; initializing new model and scattering to Dask workers.")
+                self.use_finetuning = False
+                self._embedding_model = MetricsVAE()
+                client, cluster, evaluator_future = self.setup_dask(batch_size=BATCH_SIZE, model=self._embedding_model, embedding_dim=MEASURE_DIM)
+        else:
+            log.info("Retraining disabled: using fixed evaluator for entire run.")
+            client, cluster, evaluator_future, self._embedding_model = self.setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
+             
+        self.client = client
+        self.cluster = cluster
+        self.evaluator_future = evaluator_future
 
     @classmethod
-    def load_state(cls, state, client, evaluator_future, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed):
+    def load_state(cls, state, pretrained_model_path, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed, do_retraining=False):
         instance = cls(
             scheduler=state["scheduler"],
             archive=state["archive"],
             start_iter=state["start_iter"],
             stats=state["stats"],
-            evaluator_future=evaluator_future,
-            client=client,
+            pretrained_model_path=pretrained_model_path,
             checkpoint_dir=checkpoint_dir,
             heatmap_dir=heatmap_dir,
             gridplot_dir=gridplot_dir,
@@ -230,11 +251,11 @@ class QDRunner:
             centroids=getattr(state["archive"], "centroids", None),
             initial_WSS=state["stats"][0].get("initial_WSS", None),
             grid_state=state["stats"][-1].get("grid_state", None),
+            do_retraining= do_retraining
         )
         return instance
 
-    @staticmethod
-    def setup_dask(batch_size=BATCH_SIZE, model = None, embedding_dim = None, model_path=None):
+    def setup_dask(self, batch_size=BATCH_SIZE, model = None, embedding_dim = None, model_path=None):
         """Create a Dask LocalCluster and scatter the evaluator to all workers.
         
         Takes either a pre-instantiated model and embedding_dim or a path to a pretrained model checkpoint.
@@ -248,11 +269,11 @@ class QDRunner:
             client = Client(cluster)
             log.debug("Dask cluster ready", dashboard=client.dashboard_link)
 
-            evaluator = EvaluatorMetrics.load_pretrained(model_path)
+            evaluator, model = EvaluatorMetrics.load_pretrained(model_path)
             evaluator_future = client.scatter(evaluator, broadcast=True)
             log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
 
-            return client, cluster, evaluator_future
+            return client, cluster, evaluator_future, model
         
         elif model is not None:
             log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
@@ -319,18 +340,38 @@ class QDRunner:
         }
         
     def _start_retraining_routine(self):
-        # get current elites from archive
-        # finetune the VAE on these elites
-        # recalculate measures for all elites in archive with the updated VAE
-        # update the archive with the new measures (without changing fitness or solutions)
-        # update the evaluator_future with the new evaluator (with updated VAE)
-        
+        # gets current elites from archive
         current_elites = self.archive.data()
-        elite_ids = [array_to_solution(sol)["id"] for sol in current_elites["solution"]]
+        solutions = current_elites["solution"]
+        objectives = current_elites["objective"]
+        elite_ids = [array_to_solution(sol)["id"] for sol in solutions]
         phenotype_data = self._evaluation_buffer.get_phenotype_data(elite_ids)
-      
-  
         
+        # finetunes the VAE on these elites
+        finetuned_model, embedding_dim = None  # TODO: implement finetuning routine and assign the resulting model here
+        # recalculates measures for all elites in archive with the updated VAE
+        measures = None  # TODO: call updated evaluator to recompute embeddings
+
+        # filters which remapped elites should be re-inserted
+        sol_to_add, obj_to_add, measure_to_add = self._filter_elites_by_novelty(
+            solutions, objectives, measures
+        )
+
+        # updates the archive with the new measures (without changing fitness or solutions)
+        self.archive.clear()
+        with self._track_add_status() as (new_insertions, substitutions):
+            self.archive.add(sol_to_add, obj_to_add, measure_to_add)
+            
+        if new_insertions != measures.shape[0]:
+            raise ValueError("All remapped elites should be re-added to the archive, but some were rejected. Check the filtering logic and add_status tracking.")
+            
+        # reset dask with the updated evaluator (with the finetuned VAE)
+        self.client.close(); self.cluster.close()
+        self.client, self.cluster, self.evaluator_future = self.setup_dask(
+            model=finetuned_model, embedding_dim=embedding_dim
+        )
+     
+       
     def run(self, total_iters, start_iter=None):
         """Execute the ask → evaluate → tell loop.
 
@@ -341,7 +382,7 @@ class QDRunner:
 
         for i in range(start_iter, total_iters):
             
-            if (i % RETRAIN_EVERY == 0) and (i != start_iter):
+            if self.do_retraining and (i % RETRAIN_EVERY == 0) and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
                 self._start_retraining_routine()
                 
@@ -582,6 +623,99 @@ class QDRunner:
         if np.std(novelty) < 1e-10 or np.std(f) < 1e-10:
             return float("nan")
         return float(np.corrcoef(novelty, f)[0, 1])
+
+    # -- novelty-based elite filtering ----------------------------------------
+
+    @staticmethod
+    def _filter_elites_by_novelty(
+        solutions: np.ndarray,
+        objectives: np.ndarray,
+        measures: np.ndarray,
+        novelty_threshold: float = 0.5,
+        k: int = NS_KNN,
+    ) -> tuple[list, list, list]:
+        """Filter archive elites after a measure-space change using KNN novelty.
+
+        After the VAE is retrained, every elite's measure is recomputed in the
+        new latent space.  This function decides which of those remapped elites
+        are worth re-inserting:
+
+        - **Novel** solutions (mean k-NN distance > *novelty_threshold*) are
+          always admitted — they occupy a genuinely unique region.
+        - **Non-novel** solutions compete locally: each one's nearest neighbour
+          acts as an incumbent; within each group that shares the same
+          nearest-neighbour, only the highest-fitness challenger is kept, and
+          only if it beats that neighbour's own fitness.
+
+        Parameters
+        ----------
+        solutions : np.ndarray, shape (N, D)
+            Elite solution vectors (raw arrays, not dicts).
+        objectives : np.ndarray, shape (N,)
+            Fitness values corresponding to each elite.
+        measures : np.ndarray, shape (N, M)
+            Newly recomputed behaviour descriptors in the updated latent space.
+        novelty_threshold : float
+            Mean k-NN distance below which a solution is considered non-novel.
+            Defaults to 0.5; tune to match the scale of the new latent space.
+        k : int
+            Number of nearest neighbours used for novelty scoring.
+
+        Returns
+        -------
+        sol_to_add : list of np.ndarray
+            Filtered solution arrays ready to pass to ``archive.add``.
+        obj_to_add : list of float
+            Corresponding fitness values.
+        measure_to_add : list of np.ndarray
+            Corresponding measures in the new latent space.
+        """
+        nn = NearestNeighbors(n_neighbors=k + 1, metric="euclidean")
+        nn.fit(measures)
+        distances, indices = nn.kneighbors(measures)
+
+        # exclude self (column 0)
+        novelty_scores       = distances[:, 1:].mean(axis=1)
+        nearest_neighbor_idx = indices[:, 1]  # closest *other* solution
+
+        novel_mask     = novelty_scores > novelty_threshold
+        non_novel_mask = ~novel_mask
+
+        sol_to_add: list     = []
+        obj_to_add: list     = []
+        measure_to_add: list = []
+
+        # --- Pass 1: novel solutions, always admitted ---
+        for i in np.where(novel_mask)[0]:
+            sol_to_add.append(solutions[i])
+            obj_to_add.append(objectives[i])
+            measure_to_add.append(measures[i])
+
+        # --- Pass 2: non-novel solutions — local winner-takes-all competition ---
+        # Group solutions by the index of their nearest neighbour (the "cell" they
+        # would collide in) and keep only the best challenger per group, provided
+        # it outperforms that neighbour's fitness.
+        collision_groups: dict = {}   # nn_idx -> [(objective, solution_idx), ...]
+        for i in np.where(non_novel_mask)[0]:
+            nn_idx = nearest_neighbor_idx[i]
+            collision_groups.setdefault(nn_idx, []).append((objectives[i], i))
+
+        n_collision_winners = 0
+        for nn_idx, competitors in collision_groups.items():
+            best_obj, best_i = max(competitors, key=lambda x: x[0])
+            if best_obj > objectives[nn_idx]:
+                sol_to_add.append(solutions[best_i])
+                obj_to_add.append(objectives[best_i])
+                measure_to_add.append(measures[best_i])
+                n_collision_winners += 1
+
+        log.info(
+            "Elite novelty filter complete",
+            novel_admitted=int(novel_mask.sum()),
+            collision_winners=n_collision_winners,
+            total_to_add=len(sol_to_add),
+        )
+        return sol_to_add, obj_to_add, measure_to_add
 
     # -- archive add() tracking -----------------------------------------------
 

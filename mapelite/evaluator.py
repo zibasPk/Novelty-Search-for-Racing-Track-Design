@@ -51,7 +51,7 @@ class EvaluatorMetrics(Evaluator):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         embedding_model, embedding_dim, params = MetricsVAE.load_pretrained(path, device)
 
-        return cls(embedding_model, embedding_dim, device)
+        return cls(embedding_model, embedding_dim, device), embedding_model
 
     @staticmethod
     def validate_metrics(metrics):
