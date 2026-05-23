@@ -1,6 +1,6 @@
 # qd_runner.py
 # Shared infrastructure for Quality-Diversity search loops.
-# Both novelty_search.ipynb and CVT_mapelite.ipynb delegate to these classes.
+# novelty_search.ipynb delegates to these classes.
 
 import torch
 
@@ -14,7 +14,6 @@ from mapelite.config import (
     RETRAIN_EVERY,
     NS_KNN,
     MEASURE_DIM,
-    RunMode
 )
 from mapelite.evaluator import EvaluatorMetrics
 from mapelite.archive_visualizer import ArchiveVisualizer
@@ -180,8 +179,6 @@ class QDRunner:
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
-        centroids=None,
-        initial_WSS=None,
         stats=None,
         grid_state=None
     ):
@@ -200,10 +197,6 @@ class QDRunner:
             BUFFER_DIR, "buffer.json")
 
         self.seed = seed
-        # Fixed centroids for WSS (CVT case). None → use archive measures (NS case).
-        self.centroids = np.asarray(
-            centroids) if centroids is not None else None
-        self.initial_WSS = initial_WSS
         # Mutable run state
         self.global_best_score = stats[0].get("global_best_score", INVALID_SCORE) if stats else INVALID_SCORE
         self.global_best_id = stats[0].get("global_best_id") if stats else None
@@ -214,8 +207,7 @@ class QDRunner:
         self._visualizer = ArchiveVisualizer(
             archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state=grid_state)
 
-        self._run_mode = RunMode.CVT if centroids is not None else RunMode.NS
-        self._embedding_model = None 
+        self._embedding_model = None
         self.use_finetuning = do_retraining
         if do_retraining:
             log.info("Retraining enabled: will finetune evaluator on elites every "
@@ -248,8 +240,6 @@ class QDRunner:
             gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
             seed=seed,
-            centroids=getattr(state["archive"], "centroids", None),
-            initial_WSS=state["stats"][0].get("initial_WSS", None),
             grid_state=state["stats"][-1].get("grid_state", None),
             do_retraining= do_retraining
         )
@@ -459,30 +449,18 @@ class QDRunner:
             mean_pairwise_dist = self._compute_mean_pairwise_dist(measures)
             high_quality_cov = self._compute_high_quality_coverage(arch_scores, threshold=10.0)
             
-            mean_knn_novelty = None
-            fitness_novelty_corr = None
-            wss = None
-            
-            match self._run_mode:
-                case RunMode.CVT:
-                    wss = self._compute_wss(self.centroids) 
-                case RunMode.NS:
-                    mean_knn_novelty = self._compute_mean_knn_novelty(measures, k = NS_KNN)
-                    fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_scores, k = NS_KNN)
-                case _:
-                    log.warning("Unknown run mode: ", mode=self._run_mode)
+            mean_knn_novelty = self._compute_mean_knn_novelty(measures, k=NS_KNN)
+            fitness_novelty_corr = self._compute_fitness_novelty_corr(measures, arch_scores, k=NS_KNN)
             
             
             self.stats.append({
                 "iteration": i,
-                "initial_WSS": self.initial_WSS,
                 "Archive size": elites,
                 "iteration_best": batch_best,
                 "global_best_score": self.global_best_score,
                 "global_best_id": self.global_best_id,
                 "new_elites": new_elites_count,
                 "substituted_elites": sub_elites_count,
-                "wss": wss,
                 "qd_score": qd_score,
                 "acceptance_rate": acceptance_rate,
                 "mean_pairwise_dist": mean_pairwise_dist,
@@ -536,35 +514,6 @@ class QDRunner:
     
     
     # -- metrics helpers -----------------------------------------------------------
-
-    def _compute_wss(self, centroids: np.ndarray) -> float:
-        """Mean per-point Within-Cluster Sum of Squares for all buffer embeddings.
-
-        For each embedding in the buffer the squared distance to the nearest
-        centroid is computed; returns the *mean* of these minimum squared
-        distances (total WSS / N) so the value is comparable across iterations
-        regardless of how many tracks have been evaluated.
-
-        Parameters
-        ----------
-        centroids : np.ndarray, shape (K, D)
-            Cluster centres to use.
-        """
-        if len(self._evaluation_buffer.entries) == 0 or len(centroids) == 0:
-            return float("nan")
-
-        embeddings = np.array(
-            [e["measure"] for e in self._evaluation_buffer.entries],
-            dtype=float,
-        )  # (N, D)
-        centroids = np.asarray(centroids, dtype=float)  # (K, D)
-
-        # Pairwise squared distances via broadcasting: (N, K)
-        sq_dists = np.sum(
-            (embeddings[:, np.newaxis, :] - centroids[np.newaxis, :, :]) ** 2,
-            axis=2,
-        )
-        return float(np.mean(np.min(sq_dists, axis=1)))
 
     def _compute_qd_score(self, objective_scores: np.ndarray) -> float:
         """Sum of all valid elite fitnesses (QD-Score)."""

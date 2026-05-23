@@ -360,8 +360,6 @@ class ArchiveVisualizer:
                             ``{key, label, color, alpha?, linewidth?,
                             clean_invalid?}``.
         ``"cumulative"``  – cumulative new + substituted elites (no extra keys).
-        ``"wss"``         – line plot with optional ``initial_WSS`` reference;
-                            requires ``key``, ``color``.
         """
         stats = self.stats
         if not stats:
@@ -369,7 +367,6 @@ class ArchiveVisualizer:
             return
 
         iterations = [s["iteration"] for s in stats]
-        initial_WSS = stats[0].get("initial_WSS")
         bar_width = max(1, len(iterations) // 200)
 
         def get_series(key):
@@ -413,11 +410,6 @@ class ArchiveVisualizer:
                 "title": "Cumulative Elite Insertions",
                 "ylabel": "Cumulative Count",
                 "type": "cumulative",
-            },
-            {
-                "title": "Within-Cluster Sum of Squares (WSS) — normalized by evaluated tracks",
-                "ylabel": "Mean WSS/track",
-                "type": "wss", "key": "wss", "color": "tab:brown",
             },
             {
                 "title": "QD-Score", "ylabel": "QD-Score",
@@ -503,20 +495,6 @@ class ArchiveVisualizer:
                 ax.plot(iterations, cum_new + cum_sub, label="Cumulative Total",
                         color="tab:blue", linewidth=2, linestyle="--")
                 ax.legend()
-
-            elif ptype == "wss":
-                values = get_series(p["key"])
-                if is_empty(values):
-                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
-                            transform=ax.transAxes, color="gray", fontsize=10)
-                else:
-                    ax.plot(iterations, values,
-                            color=p["color"], linewidth=1.5)
-                if initial_WSS is not None:
-                    ax.axhline(initial_WSS, color="red", linewidth=1.5,
-                               linestyle="--",
-                               label=f"Training mean WSS/track ({initial_WSS:.2f})")
-                    ax.legend()
 
             ax.set_ylabel(p.get("ylabel", ""))
             ax.set_title(p["title"])

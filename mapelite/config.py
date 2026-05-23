@@ -7,10 +7,6 @@ from enum import IntEnum
 class RngMode(IntEnum):
     UNIFORM = 0
     PERLIN = 1
-    
-class RunMode(IntEnum):
-    CVT = 0
-    NS = 1
 
 
 # --- General Setup ---
@@ -49,7 +45,6 @@ DEBUG_MUTATION = True
 # --- Directories ---
 EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_7.pth"
 PRECOMPILED_EMBEDDINGS_PATH = "mapelite/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_7.npz"
-CVT_DIR = "data/cvt/"
 NS_DIR = "data/ns/"
 CHECKPOINT_DIR = "checkpoints/"
 HEATMAP_DIR = "heatmaps/"
