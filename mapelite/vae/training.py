@@ -10,7 +10,7 @@ from torch.amp import GradScaler, autocast
 from tqdm.auto import tqdm
 
 from mapelite.vae.losses import vae_loss
-from mapelite.vae.config import TRAINING_CONFIG as _TC
+from mapelite.vae.config import TRAINING_CONFIG as _TC, FINETUNING_CONFIG as _FT
 
 _KLD = _TC["kld"]
 _LRS = _TC["lr_schedule"]
@@ -42,6 +42,21 @@ class TrainingConfig:
     # Loss Configuration
     dim_weights: torch.Tensor | None = _TC["dim_weights"]
 
+    # Fine-tuning options
+    # When True the trainer freezes the first `n_frozen_encoder_blocks` circular
+    # ResBlocks in the encoder before building the optimizer, so only the deeper
+    # layers and the latent heads are updated.
+    finetune: bool = False
+    n_frozen_encoder_blocks: int = _FT["n_frozen_encoder_blocks"]
+
+    # Differential LR for the decoder during fine-tuning.
+    # When > 0 and finetune=True, the optimizer is built with two param groups:
+    #   group 0 — unfrozen encoder params (input_proj, deep conv blocks, fc_mu, fc_var) at `lr`
+    #   group 1 — decoder params at `decoder_lr`
+    # ReduceLROnPlateau scales both groups by the same factor, preserving the ratio.
+    # Set to 0.0 to use the same lr for encoder and decoder (no differential LR).
+    decoder_lr: float = _FT["decoder_lr"]
+
     @classmethod
     def from_dict(cls, d: dict, dim_weights: torch.Tensor | None = None) -> "TrainingConfig":
         """Build from the legacy ``parameters`` dict format."""
@@ -57,7 +72,10 @@ class TrainingConfig:
             lr_factor=lr_schedule.get("factor", _LRS["factor"]),
             lr_patience=lr_schedule.get("patience", _LRS["patience"]),
             min_lr=lr_schedule.get("min_lr", _LRS["min_lr"]),
-            dim_weights=dim_weights if dim_weights is not None else d.get("dim_weights")
+            dim_weights=dim_weights if dim_weights is not None else d.get("dim_weights"),
+            finetune=d.get("finetune", False),
+            n_frozen_encoder_blocks=d.get("n_frozen_encoder_blocks", _FT["n_frozen_encoder_blocks"]),
+            decoder_lr=d.get("decoder_lr", _FT["decoder_lr"]),
         )
 
 
@@ -108,21 +126,45 @@ class VAETrainer:
 
     Parameters
     ----------
-    model  : nn.Module     – a ``MetricsCircularVAE`` (or compatible).
+    model  : nn.Module      – a ``MetricsVAE`` (or compatible).
     config : TrainingConfig – hyper-parameters.
     device : torch.device   – target device.
+
+    Fine-tuning mode
+    ----------------
+    Set ``config.finetune = True`` to freeze the first
+    ``config.n_frozen_encoder_blocks`` circular ResBlocks of the encoder
+    (the low-dilation blocks that capture generic local patterns).
+
+    Differential LR
+    ~~~~~~~~~~~~~~~
+    When ``config.decoder_lr > 0`` and ``config.finetune = True``, the
+    optimizer is built with two parameter groups:
+
+      - **Group 0** – unfrozen encoder params (``input_projection``, deep
+        conv blocks, ``fc_mu``, ``fc_var``) at ``config.lr``.
+      - **Group 1** – decoder params at ``config.decoder_lr``.
+
+    ``ReduceLROnPlateau`` reduces both groups by the same factor on a
+    plateau, so the ratio is preserved throughout training.  When
+    ``config.decoder_lr == 0.0`` (default for pretraining), a single flat
+    group at ``config.lr`` is used instead.
     """
 
     def __init__(self, model, config: TrainingConfig, device):
         self.model = model.to(device)
         self.device = device
         self.config = config
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+
+        if config.finetune:
+            self._apply_finetuning_freeze()
+
+        self.optimizer = self._build_optimizer()
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 
-            mode='min', 
+            self.optimizer,
+            mode='min',
             factor=config.lr_factor,
-            patience=config.lr_patience,  
+            patience=config.lr_patience,
             min_lr=config.min_lr
         )
         self.use_amp = device.type == "cuda"
@@ -135,6 +177,86 @@ class VAETrainer:
             "val_total_loss": [], "val_recon_loss": [], "val_kld_loss": [],
             "beta": [],
         }
+
+    # -- optimizer construction -----------------------------------------------
+
+    def _build_optimizer(self) -> torch.optim.Optimizer:
+        """Build an Adam optimizer, optionally with a separate LR for the decoder.
+
+        Returns a single-group optimizer during pretraining (``finetune=False``
+        or ``decoder_lr=0``), and a two-group optimizer during fine-tuning
+        when ``decoder_lr > 0``.
+        """
+        cfg = self.config
+
+        if not cfg.finetune or cfg.decoder_lr <= 0:
+            # Pretraining path or fine-tuning without differential LR:
+            # single group containing all trainable parameters.
+            trainable = [p for p in self.model.parameters() if p.requires_grad]
+            return torch.optim.Adam(trainable, lr=cfg.lr)
+
+        # Fine-tuning path with differential LR.
+        # The frozen early blocks already have requires_grad=False from
+        # _apply_finetuning_freeze, so they are naturally excluded here.
+        n = cfg.n_frozen_encoder_blocks
+        encoder_params = (
+            list(self.model.input_projection.parameters()) +
+            [p for i, block in enumerate(self.model.conv_blocks)
+               if i >= n
+               for p in block.parameters()] +
+            list(self.model.fc_mu.parameters()) +
+            list(self.model.fc_var.parameters())
+        )
+        decoder_params = list(self.model.decoder.parameters())
+
+        print(
+            f"[Fine-tune] Differential LR — "
+            f"encoder: {cfg.lr:.1e}, decoder: {cfg.decoder_lr:.1e}"
+        )
+        return torch.optim.Adam([
+            {"params": encoder_params, "lr": cfg.lr},
+            {"params": decoder_params, "lr": cfg.decoder_lr},
+        ])
+
+    # -- fine-tuning helpers --------------------------------------------------
+
+    def _apply_finetuning_freeze(self) -> None:
+        """Freeze the first ``n_frozen_encoder_blocks`` encoder conv blocks.
+
+        Frozen blocks:  the low-dilation CircularResBlocks that learn generic
+                        local temporal patterns — kept intact from pretraining.
+        Unfrozen parts: deeper encoder blocks (dilation 4, 8, …), fc_mu,
+                        fc_var, input_projection, and the full decoder.
+        """
+        n = self.config.n_frozen_encoder_blocks
+        n_blocks = len(self.model.conv_blocks)
+        if n < 0 or n > n_blocks:
+            raise ValueError(
+                f"n_frozen_encoder_blocks={n} is out of range "
+                f"[0, {n_blocks}] for this model."
+            )
+
+        if n == 0:
+            print("[Fine-tune] n_frozen_encoder_blocks=0: all encoder blocks remain trainable.")
+            return
+
+        for i, block in enumerate(self.model.conv_blocks):
+            freeze = i < n
+            for p in block.parameters():
+                p.requires_grad = not freeze
+
+        total_params    = sum(p.numel() for p in self.model.parameters())
+        frozen_params   = sum(p.numel() for p in self.model.parameters() if not p.requires_grad)
+        trainable_params = total_params - frozen_params
+
+        print(
+            f"[Fine-tune] Frozen encoder blocks: {n}/{n_blocks}  "
+            f"(dilation 1–{2**(n-1)}).\n"
+            f"  Frozen params  : {frozen_params:,}  "
+            f"({100 * frozen_params / total_params:.1f} %)\n"
+            f"  Trainable params: {trainable_params:,}  "
+            f"({100 * trainable_params / total_params:.1f} %)"
+        )
 
     # -- public API -----------------------------------------------------------
 
@@ -149,7 +271,11 @@ class VAETrainer:
             val_stats = self._validate_epoch(val_loader, beta)
 
             self.scheduler.step(val_stats['recon'])
-            current_lr = self.optimizer.param_groups[0]['lr']
+            encoder_lr = self.optimizer.param_groups[0]['lr']
+            lr_str = f"{encoder_lr:.2e}"
+            if len(self.optimizer.param_groups) > 1:
+                decoder_lr = self.optimizer.param_groups[1]['lr']
+                lr_str += f" (dec {decoder_lr:.2e})"
 
             self._update_history(train_stats, val_stats, beta)
 
@@ -168,7 +294,7 @@ class VAETrainer:
                 f"recon: {train_stats['recon']:.4f} | kld: {train_stats['kld']:.4f}\n"
                 f"  Val   — total: {val_stats['total']:.4f} | "
                 f"recon: {val_stats['recon']:.4f} | kld: {val_stats['kld']:.4f}\n"
-                f"  LR: {current_lr:.2e}"
+                f"  LR: {lr_str}"
             )
 
         self.model = self.early_stopper.load_best_weights(self.model)
@@ -210,7 +336,8 @@ class VAETrainer:
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), max_norm=cfg.max_grad_norm
+                [p for p in self.model.parameters() if p.requires_grad],
+                max_norm=cfg.max_grad_norm,
             )
             self.scaler.step(self.optimizer)
             self.scaler.update()

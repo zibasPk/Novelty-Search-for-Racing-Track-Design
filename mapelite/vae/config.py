@@ -84,6 +84,41 @@ TRAINING_CONFIG = {
     "dim_weights": None,
 }
 
+# ── Fine-tuning Hyper-parameters ─────────────────────────────────────────────
+
+FINETUNING_CONFIG = {
+    # Adam learning rate for the unfrozen encoder layers (deep blocks + fc_mu/fc_var).
+    "lr": 1e-4,
+
+    # Adam learning rate for the decoder.
+    # Set to a value lower than `lr` to let the decoder track the encoder's
+    # shifting z-distribution without dominating the reconstruction signal.
+    # Set to 0.0 to use the same lr as the encoder (no differential LR).
+    "decoder_lr": 1e-5,
+
+    # Maximum number of fine-tuning epochs (early stopping usually kicks in sooner)
+    "epochs": 80,
+
+    # Early-stopping patience during fine-tuning
+    "patience": 15,
+
+    # Number of encoder CircularResBlocks to freeze (counting from block 0,
+    # i.e. the lowest-dilation blocks that learn generic local patterns).
+    "n_frozen_encoder_blocks": 2,
+
+    # ── Cyclical KLD annealing ──────────────────────────────────────────────
+    "kld": {
+        # Single cycle — beta restarts from 0 to avoid latent-space disruption
+        "n_cycles": 1,
+
+        # Reduced peak beta: recon loss dominates to preserve latent structure
+        "max_beta": 0.005,
+
+        # Longer warm-up fraction so beta rises slowly
+        "ratio": 0.5,
+    },
+}
+
 # ── Loss Function ─────────────────────────────────────────────────────────────
 
 LOSS_CONFIG = {

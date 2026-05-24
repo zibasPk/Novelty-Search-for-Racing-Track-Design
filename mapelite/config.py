@@ -27,20 +27,17 @@ ITERATIONS = 1000
 RANDOM_POPULATION_ITERS = 100
 BATCH_SIZE = 10
 INVALID_SCORE = -1e9
-RETRAIN_EVERY = 200
+
+RETRAIN_EVERY = 10
 MEASURE_DIM = 32
 
 
 # --- Archive Parameters ---
-REMAPPING_EVERY = 100  # remap archive every N iterations
-BUFFER_SIZE = 1000  # keep last 1000 solutions
-
 NS_KNN = 15  # for kNN novelty calculation
 ARCHIVE_THRESHOLD = 5.5
-# --- Checkpointing and Debugging ---
+
+# --- Checkpointing---
 CHECKPOINT_EVERY = 50
-DEBUG_CROSSOVER = True
-DEBUG_MUTATION = True
 
 # --- Directories ---
 EMBEDDING_MODEL_PATH = "mapelite/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_7.pth"
@@ -58,6 +55,5 @@ LOG_DIR = "logs"
 LOG_CONSOLE_LEVEL = logging.INFO
 LOG_FILE_LEVEL = logging.DEBUG
 
-STATS_DIR = "stats/"
 BUFFER_DIR = "buffers/"
 

@@ -128,7 +128,7 @@ class CustomEmitter(EmitterBase):
         
         if self.archive.stats.num_elites < 2:
             log.warning("Not enough elites for crossover", num_elites=self.archive.stats.num_elites)
-            return np.array([utils.invalid_solution_array() for _ in range(self.batch_size)])
+            return np.array([utils.invalid_solution_array(-1) for _ in range(self.batch_size)])
         
         out = []
         
@@ -137,12 +137,16 @@ class CustomEmitter(EmitterBase):
             try:         
                 seed = self.iteration + self._rng.random()
                 # Sample two distinct parents
+                i = 0
                 while True:
                     parents = self.archive.sample_elites(2)
                     sol1 = utils.array_to_solution(parents["solution"][0])
                     sol2 = utils.array_to_solution(parents["solution"][1])
                     if sol1["id"] != sol2["id"]:
                         break
+                    i += 1
+                    if i > 1000:  # Avoid infinite loop if archive is small
+                        raise Exception("Unable to sample two distinct parents for crossover")
 
                 response = requests.post(
                     f"{BASE_URL}/crossover",
