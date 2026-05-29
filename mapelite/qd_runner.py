@@ -2,6 +2,7 @@
 # Shared infrastructure for Quality-Diversity search loops.
 # novelty_search.ipynb delegates to these classes.
 
+import dask
 import torch
 
 from mapelite.utils import array_to_solution
@@ -308,6 +309,8 @@ class QDRunner:
 
         Returns ``(client, cluster, evaluator_future)``.
         """
+        dask.config.set({"distributed.worker.multiprocessing-method": "fork"})
+
         if model_path is not None:
             log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
             cluster = LocalCluster(
