@@ -14,7 +14,11 @@ from mapelite.config import (
     RETRAIN_EVERY,
     NS_KNN,
     MEASURE_DIM,
-    ARCHIVE_THRESHOLD,
+    DEFAULT_ARCHIVE_THRESHOLD,
+    RECALC_THRESHOLD_EVERY,
+    RANDOM_POPULATION_ITERS,
+    TARGET_ARCHIVE_SIZE,
+    K_CSC
 )
 from mapelite.evaluator import EvaluatorMetrics
 from mapelite.archive_visualizer import ArchiveVisualizer
@@ -181,7 +185,7 @@ class QDRunner:
         heatmap_dir,
         gridplot_dir,
         pretrained_model_path=None,
-        do_retraining=False,
+        finetune=False,
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
@@ -193,7 +197,7 @@ class QDRunner:
 
         self.stats: list[dict] = stats if stats is not None else []
 
-        self.do_retraining = do_retraining
+        self.do_finetune = finetune
         self.start_iter = start_iter
 
         self.checkpoint_dir = checkpoint_dir
@@ -214,8 +218,8 @@ class QDRunner:
             archive, self.stats, heatmap_dir, gridplot_dir, seed=seed, grid_state=grid_state)
 
         self._embedding_model = None
-        self.use_finetuning = do_retraining
-        if do_retraining:
+        self.use_finetuning = finetune
+        if finetune:
             log.info("Retraining enabled: will finetune evaluator on elites every "
                      f"{RETRAIN_EVERY} iterations and recalculate measures for all archived elites.")
             if pretrained_model_path is not None:
@@ -349,6 +353,14 @@ class QDRunner:
             start_iter = self.start_iter
 
         for i in range(start_iter, total_iters):
+            
+            do_recalc_threshold = i % RECALC_THRESHOLD_EVERY == 0
+            population_iter = i < RANDOM_POPULATION_ITERS
+            do_finetune = self.do_finetune and (i % RETRAIN_EVERY == 0)
+            
+            if not population_iter and do_recalc_threshold and i != start_iter:
+                self._remap_archive(self.archive.data()["measures"])
+                
             self.iteration = i  # for tracking in add() wrapper
             sols = self.scheduler.ask()
             sol_dicts = [array_to_solution(sol) for sol in sols]
@@ -361,11 +373,11 @@ class QDRunner:
             # Measure is the embedding returned by the evaluator
             for (sol_id, ok, msg, objective_score, measure, phenotype_data), sol_dict in zip(gathered, sol_dicts):
                 if not ok:
-                    log.info("Clamping bad score",
+                    log.debug("Clamping bad score",
                                 sol_id=sol_id, reason=msg)
                     objective_score = INVALID_SCORE
                 else:
-                    log.info("Solution evaluated", sol_id=sol_id,
+                    log.debug("Solution evaluated", sol_id=sol_id,
                              score=f"{objective_score:.2f}")
                     if objective_score > self.global_best_score:
                         self.global_best_score = objective_score
@@ -451,7 +463,7 @@ class QDRunner:
 
             # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
-                ckpt_name = f"{self.checkpoint_dir}checkpoint_{i:04d}.pkl"
+                ckpt_name =  os.path.join(self.checkpoint_dir, f"checkpoint_{i:04d}.pkl")
                 with open(ckpt_name, "wb") as f:
                     pickle.dump({
                         "scheduler": self.scheduler,
@@ -463,9 +475,9 @@ class QDRunner:
 
                 self._evaluation_buffer.save()
 
-            if self.do_retraining and (i % RETRAIN_EVERY == 0) and (i != start_iter):
+            if not population_iter and do_finetune and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
-                ckpt_name = f"{self.checkpoint_dir}checkpoint_{i:04d}.pkl"
+                ckpt_name =  os.path.join(self.checkpoint_dir, f"checkpoint_{i:04d}.pkl")
                 with open(ckpt_name, "wb") as f:
                     pickle.dump({
                         "scheduler": self.scheduler,
@@ -492,25 +504,32 @@ class QDRunner:
 
         self._evaluation_buffer.save()
         return self.global_best_score, self.global_best_id, self.stats
+    
+    def _recalculate_novelty_threshold(self) -> float:
+        """multiplicative proportional controller formula from "Unsupervised Behaviour Discovery
+        with Quality-Diversity Optimisation" by Luca Grillotti and Antoine Cully 2022"""
+        current_size = self.archive.stats.num_elites
+        current_threshold = self.archive.novelty_threshold
+        
+        new_threshold = current_threshold * (1 + K_CSC * (current_size - TARGET_ARCHIVE_SIZE))
+        
+        new_threshold = max(new_threshold, 1e-3) # to avoid collapsing to zero if archive is empty
+        return type(current_threshold)(new_threshold) # cast to the same type as current_threshold to avoid any issues
 
-    def _start_retraining_routine(self):
-        """Orchestrate one retraining cycle:
-        finetune → remap measures → filter → rebuild archive → reset Dask.
-        """
+    def _remap_archive(self, new_measures):
+        new_threshold = self._recalculate_novelty_threshold()
+        log.info("Recalculating novelty threshold and remapping archive", new_threshold=new_threshold)
         current_elites = self.archive.data()
         solutions  = current_elites["solution"]
         objectives = current_elites["objective"]
-        elite_ids  = [array_to_solution(sol)["id"] for sol in solutions]
-        elite_phenotype = self._evaluation_buffer.get_phenotype_data(elite_ids)
-
-        finetuned_model, embedding_dim = self._finetune_embedding_model(elite_phenotype)
-        measures = self._recompute_measures(finetuned_model, elite_phenotype)
-
         sol_to_add, obj_to_add, measure_to_add = self._filter_elites_by_novelty(
-            solutions, objectives, measures
+            solutions, objectives, new_measures, new_threshold
         )
-
+        
         self.archive.clear()
+        self._visualizer.reset_grid_state()
+        self.archive._novelty_threshold = new_threshold # a bit of a hack to avoid reinitializing the archive just to update the threshold, since add() is the only method that uses it and we call it right after
+        
         with self._track_add_status() as (new_insertions, substitutions):
             self.archive.add(sol_to_add, obj_to_add, measure_to_add)
 
@@ -520,6 +539,20 @@ class QDRunner:
                 f"but only {len(new_insertions)} were accepted. "
                 "Check the novelty-filter and add_status tracking."
             )
+    
+    def _start_retraining_routine(self):
+        """Orchestrate one retraining cycle:
+        finetune → remap measures → filter → rebuild archive → reset Dask.
+        """
+        current_elites = self.archive.data()
+        solutions  = current_elites["solution"]
+        elite_ids  = [array_to_solution(sol)["id"] for sol in solutions]
+        elite_phenotype = self._evaluation_buffer.get_phenotype_data(elite_ids)
+
+        finetuned_model, embedding_dim = self._finetune_embedding_model(elite_phenotype)
+        new_measures = self._recompute_measures(finetuned_model, elite_phenotype)
+
+        self._remap_archive(new_measures)
 
         finetuned_model.cpu()
         self._embedding_model = finetuned_model
@@ -555,13 +588,6 @@ class QDRunner:
             except Exception:
                 return None
 
-        all_valid = [
-            p
-            for e in self._evaluation_buffer.entries.values()
-            if e.get("valid", False) and e.get("phenotype_data")
-            for p in (_safe_preprocess(e["phenotype_data"]),)
-            if p is not None
-        ]
         valid_elites = [
             p
             for raw in elite_phenotype_data
@@ -569,22 +595,20 @@ class QDRunner:
             for p in (_safe_preprocess(raw),)
             if p is not None
         ]
-        finetune_data = all_valid + valid_elites * 2   # oversample elites
-
+        finetune_data = valid_elites
+        
         if not finetune_data:
             raise ValueError("No valid phenotype data available for fine-tuning.")
 
-        log.info("Fine-tuning dataset built",
-                 buffer_samples=len(all_valid),
-                 elite_samples=len(valid_elites),
-                 total=len(finetune_data))
-
+        batch_size = min(_DC["batch_size"], len(valid_elites))
+        log.info("Fine-tuning dataset built", total_samples=len(finetune_data), batch_size=batch_size)
+        
         dataset = MetricsDataset(finetune_data)
         n_val   = max(1, int(_DC["val_split"] * len(dataset)))
         n_train = len(dataset) - n_val
         train_ds, val_ds = random_split(dataset, [n_train, n_val])
-        train_loader = DataLoader(train_ds, batch_size=64, shuffle=True,  collate_fn=collate_fn)
-        val_loader   = DataLoader(val_ds,   batch_size=64, shuffle=False, collate_fn=collate_fn)
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  collate_fn=collate_fn)
+        val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, collate_fn=collate_fn)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_copy = copy.deepcopy(self._embedding_model)
@@ -662,7 +686,7 @@ class QDRunner:
         solutions: np.ndarray,
         objectives: np.ndarray,
         measures: np.ndarray,
-        novelty_threshold: float = ARCHIVE_THRESHOLD,
+        novelty_threshold: float = DEFAULT_ARCHIVE_THRESHOLD,
         k: int = NS_KNN,
     ) -> tuple[list, list, list]:
         """Filter archive elites after a measure-space change using KNN novelty.
@@ -701,6 +725,10 @@ class QDRunner:
         measure_to_add : list of np.ndarray
             Corresponding measures in the new latent space.
         """
+        
+        if len(solutions) <= k:
+            return list(solutions), list(objectives), list(measures)
+
         nn = NearestNeighbors(n_neighbors=k + 1, metric="euclidean")
         nn.fit(measures)
         distances, indices = nn.kneighbors(measures)

@@ -88,13 +88,13 @@ TRAINING_CONFIG = {
 
 FINETUNING_CONFIG = {
     # Adam learning rate for the unfrozen encoder layers (deep blocks + fc_mu/fc_var).
-    "lr": 1e-4,
+    "lr": 5e-4,
 
     # Adam learning rate for the decoder.
     # Set to a value lower than `lr` to let the decoder track the encoder's
     # shifting z-distribution without dominating the reconstruction signal.
     # Set to 0.0 to use the same lr as the encoder (no differential LR).
-    "decoder_lr": 1e-5,
+    "decoder_lr": 5e-5,
 
     # Maximum number of fine-tuning epochs (early stopping usually kicks in sooner)
     "epochs": 80,

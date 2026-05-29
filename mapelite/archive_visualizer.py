@@ -59,6 +59,18 @@ class ArchiveVisualizer:
     def grid_state(self):
         return self._grid_state
 
+    def reset_grid_state(self):
+        """Clear the grid state after an archive remap.
+
+        Should be called whenever the archive is cleared and rebuilt (e.g. after
+        VAE retraining), so that ``plot_grid`` starts a fresh layout that matches
+        the new insertion order rather than the stale pre-remap slots.
+        The ``_track_cache`` is intentionally *not* cleared here — the same
+        solution IDs are re-added after remapping, so cached track outlines
+        remain valid and avoid redundant API calls.
+        """
+        self._grid_state.clear()
+
     # -- track outline helper -------------------------------------------------
     def plot_grid(self, iteration_idx=None, substitutions=None, max_cols=15, max_sub_color=20,
               max_rows=None, save_dir=None):
