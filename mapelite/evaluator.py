@@ -105,7 +105,7 @@ class EvaluatorMetrics(Evaluator):
 
             # Extract raw fitness metrics
             fit = r_json.get("fitness", {})
-            log.debug("Raw fitness metrics", sol_id=sol_id, metrics=fit)
+            log.trace("Raw fitness metrics", sol_id=sol_id, metrics=fit)
             
             # Extract the metrics used for calculating the measure (embedding)
             phenotype_data = fit.get("embedding_data", [])
