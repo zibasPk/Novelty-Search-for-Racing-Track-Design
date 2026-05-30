@@ -5,7 +5,8 @@ import path from "path";
 export function initLogger({
   filePath,
   level = "info",
-  withTimestamp = true
+  withTimestamp = true,
+  fileOnly = false
 }) {
   // Ensure directory exists
   const dir = path.dirname(filePath);
@@ -28,11 +29,9 @@ export function initLogger({
 
       const line = `${ts}[${methodName.toUpperCase()}] ${formattedArgs}`;
 
-      // file
       logFile.write(line + "\n");
 
-      // console
-      rawMethod(line);
+      if (!fileOnly) rawMethod(line);
     };
   };
 
