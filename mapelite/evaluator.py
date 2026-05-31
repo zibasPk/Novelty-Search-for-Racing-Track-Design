@@ -40,8 +40,14 @@ class EvaluatorMetrics(Evaluator):
         self.embedding_dim = embedding_dim
         self.device = device
         self.preprocessor = MetricsPreprocessor()
-        # Set the model to evaluation mode
         self.embedding_model.eval()
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # CUDA tensors can't cross process boundaries (Dask workers use processes=True)
+        state['embedding_model'] = self.embedding_model.cpu()
+        state['device'] = torch.device('cpu')
+        return state
 
     @classmethod
     def load_pretrained(cls, path):
