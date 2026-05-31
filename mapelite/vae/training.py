@@ -11,6 +11,9 @@ from tqdm.auto import tqdm
 
 from mapelite.vae.losses import vae_loss
 from mapelite.vae.config import TRAINING_CONFIG as _TC, FINETUNING_CONFIG as _FT
+from mapelite.logging_config import get_logger
+
+log = get_logger(__name__)
 
 _KLD = _TC["kld"]
 _LRS = _TC["lr_schedule"]
@@ -109,10 +112,10 @@ class EarlyStopper:
     def load_best_weights(self, model: torch.nn.Module) -> torch.nn.Module:
         """Restore the model to its best recorded state."""
         if self.best_model_state is not None:
-            print(
-                f"Restoring model to best validation loss from epoch "
-                f"{self.best_model_epoch}: "
-                f"{self.min_validation_loss:.4f}"
+            log.info(
+                "Restoring model to best validation loss",
+                epoch=self.best_model_epoch,
+                val_loss=f"{self.min_validation_loss:.4f}",
             )
             model.load_state_dict(self.best_model_state)
         return model
@@ -209,9 +212,10 @@ class VAETrainer:
         )
         decoder_params = list(self.model.decoder.parameters())
 
-        print(
-            f"[Fine-tune] Differential LR — "
-            f"encoder: {cfg.lr:.1e}, decoder: {cfg.decoder_lr:.1e}"
+        log.info(
+            "Fine-tune differential LR",
+            encoder_lr=f"{cfg.lr:.1e}",
+            decoder_lr=f"{cfg.decoder_lr:.1e}",
         )
         return torch.optim.Adam([
             {"params": encoder_params, "lr": cfg.lr},
@@ -237,7 +241,7 @@ class VAETrainer:
             )
 
         if n == 0:
-            print("[Fine-tune] n_frozen_encoder_blocks=0: all encoder blocks remain trainable.")
+            log.info("Fine-tune: all encoder blocks remain trainable", n_frozen_encoder_blocks=0)
             return
 
         for i, block in enumerate(self.model.conv_blocks):
@@ -249,13 +253,14 @@ class VAETrainer:
         frozen_params   = sum(p.numel() for p in self.model.parameters() if not p.requires_grad)
         trainable_params = total_params - frozen_params
 
-        print(
-            f"[Fine-tune] Frozen encoder blocks: {n}/{n_blocks}  "
-            f"(dilation 1–{2**(n-1)}).\n"
-            f"  Frozen params  : {frozen_params:,}  "
-            f"({100 * frozen_params / total_params:.1f} %)\n"
-            f"  Trainable params: {trainable_params:,}  "
-            f"({100 * trainable_params / total_params:.1f} %)"
+        log.info(
+            "Fine-tune encoder blocks frozen",
+            frozen_blocks=f"{n}/{n_blocks}",
+            max_dilation=2 ** (n - 1),
+            frozen_params=frozen_params,
+            frozen_pct=f"{100 * frozen_params / total_params:.1f}%",
+            trainable_params=trainable_params,
+            trainable_pct=f"{100 * trainable_params / total_params:.1f}%",
         )
 
     # -- public API -----------------------------------------------------------
@@ -280,7 +285,7 @@ class VAETrainer:
             self._update_history(train_stats, val_stats, beta)
 
             if self.early_stopper.check(val_stats["recon"], self.model, epoch):
-                print(f"\nEarly stopping triggered at epoch {epoch + 1}")
+                log.info("Early stopping triggered", epoch=epoch + 1)
                 break
 
             epoch_bar.set_postfix({
@@ -288,13 +293,16 @@ class VAETrainer:
                 "V_Loss": f"{val_stats['total']:.4f}",
                 "Beta":   f"{beta:.3f}",
             })
-            print(
-                f"Epoch {epoch + 1}:\n"
-                f"  Train — total: {train_stats['total']:.4f} | "
-                f"recon: {train_stats['recon']:.4f} | kld: {train_stats['kld']:.4f}\n"
-                f"  Val   — total: {val_stats['total']:.4f} | "
-                f"recon: {val_stats['recon']:.4f} | kld: {val_stats['kld']:.4f}\n"
-                f"  LR: {lr_str}"
+            log.info(
+                "Epoch complete",
+                epoch=epoch + 1,
+                train_total=f"{train_stats['total']:.4f}",
+                train_recon=f"{train_stats['recon']:.4f}",
+                train_kld=f"{train_stats['kld']:.4f}",
+                val_total=f"{val_stats['total']:.4f}",
+                val_recon=f"{val_stats['recon']:.4f}",
+                val_kld=f"{val_stats['kld']:.4f}",
+                lr=lr_str,
             )
 
         self.model = self.early_stopper.load_best_weights(self.model)
