@@ -825,8 +825,8 @@ class QDRunner:
                 new_insertions.extend(data["solution"][is_new])
 
             # log new insertions_ids and substitution_ids for this add() call
-            log.debug("New insertions: ", new= [array_to_solution(s)["id"] for s in new_insertions])
-            log.debug("Substitutions: ", sub= [(array_to_solution(old)["id"], array_to_solution(new)["id"]) for old, new in substitutions])
+            # log.trace("New insertions: ", new= [array_to_solution(s)["id"] for s in new_insertions])
+            # log.trace("Substitutions: ", sub= [(array_to_solution(old)["id"], array_to_solution(new)["id"]) for old, new in substitutions])
             if len(indices_to_add) > 0:
                 original_store_add(indices_to_add, data_to_add)
 
