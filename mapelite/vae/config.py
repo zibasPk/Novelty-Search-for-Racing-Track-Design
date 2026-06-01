@@ -97,10 +97,10 @@ FINETUNING_CONFIG = {
     "decoder_lr": 5e-5,
 
     # Maximum number of fine-tuning epochs (early stopping usually kicks in sooner)
-    "epochs": 80,
+    "epochs": 90,
 
     # Early-stopping patience during fine-tuning
-    "patience": 15,
+    "patience": 30,
 
     # Number of encoder CircularResBlocks to freeze (counting from block 0,
     # i.e. the lowest-dilation blocks that learn generic local patterns).
