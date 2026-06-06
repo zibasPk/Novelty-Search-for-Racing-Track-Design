@@ -62,3 +62,6 @@ kaggle name: "n_layers=5"
 ### model_metrics_VAE_mixRng_tita_circular_7.pth
 - kaggle name: "without discarding k= 0 (version 2)"
 - Changes the pooling strategy (normalized_dft_pooling) 
+
+### model_metrics_VAE_mixRng_tita_circular_canon_1.pth
+- VAE model trained on a mixed (perlin/uniform) dataset with new canonicalization of 20k track metrics created with Tita driver.
