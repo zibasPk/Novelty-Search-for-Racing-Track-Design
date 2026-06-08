@@ -39,11 +39,12 @@ class ArchiveVisualizer:
         Random seed for UMAP reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
+    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, images_dir=None, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
         self.archive = archive
         self.stats = stats
         self.heatmap_dir = heatmap_dir
         self.gridplot_dir = gridplot_dir
+        self.images_dir = images_dir
         self.seed = seed
         self._track_cache: dict = {}
 
@@ -127,8 +128,21 @@ class ArchiveVisualizer:
                     item["new"] = True
                     break
             else:
-                log.error("Substitution target not found in grid state",
+                # Expected right after an archive remap: `_remap_archive` re-adds
+                # elites directly via `archive.add()` (bypassing grid-state
+                # tracking) after `reset_grid_state()`, so a remap-inserted elite
+                # that gets substituted in the very next `tell()` has no slot to
+                # update in place. Give the winner a fresh slot instead of
+                # dropping it (which would also surface as a later "Elite in
+                # archive not found in grid state" error).
+                log.debug("Substitution target not found in grid state — adding new entry instead",
                             target_id=prev_sol["id"], new_id=new_sol["id"])
+                self._grid_state.append({
+                    "elite": new_sol,
+                    "sub_count": 0,
+                    "new": True,
+                    "fitness": id_to_fitness.get(new_sol["id"], np.nan)
+                })
 
         if len(self._grid_state) == 0:
             return
@@ -295,6 +309,58 @@ class ArchiveVisualizer:
         if result is not None:
             self._track_cache[sol_id] = result
         return result
+
+    def save_elite_images(self, iteration_idx, save_dir=None):
+        """Render every current archive elite's track reconstruction to its own PNG.
+
+        Images are written to ``<save_dir>/<iteration_idx>/elite_<id>.png``;
+        the per-iteration directory is created if it doesn't exist yet.
+        Elites whose reconstruction can't be fetched (e.g. track server
+        unavailable) are skipped.
+
+        Every PNG shares the same fixed canvas (figure size + DPI, square)
+        and the same view window — sized to the largest track and centered
+        on each individual track — so all images come out at identical
+        resolution while preserving each track's true relative size.
+        """
+        if save_dir is None:
+            save_dir = self.images_dir
+
+        iter_dir = os.path.join(save_dir, str(iteration_idx))
+        os.makedirs(iter_dir, exist_ok=True)
+
+        elites_dicts = [array_to_solution(sol) for sol in self.archive.data("solution")]
+
+        outlines = []
+        max_span = 0.0
+        for elite in elites_dicts:
+            outline = self._get_track_outline(elite)
+            if outline is None:
+                continue
+            xs, ys = outline
+            outlines.append((elite, xs, ys))
+            max_span = max(max_span, xs.max() - xs.min(), ys.max() - ys.min())
+
+        if not outlines:
+            log.info("No elite track outlines available to save", iteration=iteration_idx)
+            return
+
+        half_extent = max_span / 2 * 1.05  # small margin so the largest track isn't clipped
+
+        for elite, xs, ys in outlines:
+            cx = (xs.max() + xs.min()) / 2
+            cy = (ys.max() + ys.min()) / 2
+
+            fig, ax = plt.subplots(figsize=(4, 4))
+            ax.plot(xs, ys, color="crimson", linewidth=1.2, zorder=2)
+            ax.set_aspect("equal")
+            ax.set_xlim(cx - half_extent, cx + half_extent)
+            ax.set_ylim(cy - half_extent, cy + half_extent)
+            ax.set_axis_off()
+            fig.savefig(os.path.join(iter_dir, f"elite_{elite['id']}.png"), dpi=150)
+            plt.close(fig)
+
+        log.info("Elite track images saved", count=len(outlines), total=len(elites_dicts), path=iter_dir)
 
     def plot_heatmap(self, iteration, save_dir=None):
         """2D UMAP compression of the archive's behavioural space, colored by fitness."""
