@@ -252,7 +252,7 @@ class QDRunner:
             buffer_path=buffer_path,
             seed=seed,
             grid_state=state["stats"][-1].get("grid_state", None),
-            do_retraining= do_retraining
+            finetune=do_retraining
         )
         return instance
 

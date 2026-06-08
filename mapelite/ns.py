@@ -127,6 +127,7 @@ if __name__ == '__main__':
             gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
             seed=SEED,
+            do_retraining=True,
         )
     else:
         archive = ProximityArchive(
