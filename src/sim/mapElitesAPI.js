@@ -7,6 +7,7 @@ import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
 import { BBOX, JSON_DEBUG, LOG_DIR } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
 import { initLogger } from '../utils/logger.js';
+import * as utils from '../utils/utils.js';
 
 
 // setup logging
@@ -333,6 +334,29 @@ app.post('/mutate', async (req, res, next) => {
 });
 
 
+
+/* ─────────────────────────────────────────────────────────────
+   /canonicalize
+   Accept a raw splineVector and return its canonical form:
+   1. winding-order normalization (CW → CCW via x-mirror)
+   2. start-point rotation to the longest straight segment
+   ──────────────────────────────────────────────────────────── */
+app.post('/canonicalize', async (req, res) => {
+  try {
+    const { splineVector } = req.body;
+    if (!Array.isArray(splineVector) || splineVector.length < 3) {
+      return res.status(400).json({ error: 'splineVector must be an array of at least 3 {x,y} points' });
+    }
+
+    let track = splineVector.map(p => ({ x: p.x, y: p.y }));
+    track = utils.canonicalizeTrack(track);
+
+    res.json({ splineVector: track });
+  } catch (error) {
+    log.error('/canonicalize error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /* ─────────────────────────────────────────────────────────────
    Global error handler

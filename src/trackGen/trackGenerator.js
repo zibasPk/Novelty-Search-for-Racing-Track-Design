@@ -33,25 +33,8 @@ export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JS
 
 	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
 
-	// Canonicalize winding order, note: signedArea isn't consistent if we allow self-intersecting tracks but we check for that later and throw an error, so  it should be fine
-	if (utils.signedArea(splineTrack) > 0) {
-		// Find track center to mirror it in place
-		let minX = Infinity, maxX = -Infinity;
-		for (let p of splineTrack) {
-			if (p.x < minX) minX = p.x;
-			if (p.x > maxX) maxX = p.x;
-		}
-		let centerX = (minX + maxX) / 2;
-
-		// Physically flip all the curves (Right turns become Left turns)
-		for (let p of splineTrack) {
-			p.x = 2 * centerX - p.x; 
-		}
-	}
-
-	const minIndex2 = utils.findLongestStraightSegment(splineTrack, 0.01, 0.5);
-	let splineTrack2 = splineTrack.slice(minIndex2).concat(splineTrack.slice(0, minIndex2));
-	splineTrack = splineTrack2;
+	// Canonicalize winding order and start point (see utils.canonicalizeTrack)
+	splineTrack = utils.canonicalizeTrack(splineTrack);
 
 	// check if a track has a self-intersection, if so throw an error
 	if (utils.hasSelfIntersection(splineTrack)) {

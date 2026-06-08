@@ -321,6 +321,31 @@ export function signedArea(points) {
 }
 
 /**
+ * Canonicalize a closed track polyline so that equivalent tracks compare equal:
+ * 1. Normalize winding order (mirror x in place if it winds CCW in screen coords,
+ *    note: signedArea isn't consistent for self-intersecting tracks, callers should
+ *    check hasSelfIntersection separately)
+ * 2. Rotate the start point to the longest straight segment
+ * Returns the canonicalized array (mirroring mutates points in place, rotation returns a new array).
+ */
+export function canonicalizeTrack(track) {
+  if (signedArea(track) > 0) {
+    let minX = Infinity, maxX = -Infinity;
+    for (const p of track) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+    }
+    const centerX = (minX + maxX) / 2;
+    for (const p of track) {
+      p.x = 2 * centerX - p.x;
+    }
+  }
+
+  const startIdx = findLongestStraightSegment(track, 0.01, 0.5);
+  return track.slice(startIdx).concat(track.slice(0, startIdx));
+}
+
+/**
  * Check whether two line segments (p1→p2) and (p3→p4) intersect.
  * Uses the standard cross-product orientation test.
  * Returns true if segments properly cross each other (not just touch at endpoints).
