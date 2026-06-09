@@ -33,7 +33,7 @@ Requires Docker , Python >= 3.12.10 and node >= v24.10.0
 2. In src folder:
     - `docker build -t torcs:dev .` (to build TORCS image)
     - `npm install` (install dependencies for api)
-3. To run the algorithm use the notebook `qd/novelty_search.ipynb`.
+3. To run the algorithm use the notebook `qd/novelty_search.ipynb` or run the script `qd/ns.py`.
 
 
 ## Borrowable bits

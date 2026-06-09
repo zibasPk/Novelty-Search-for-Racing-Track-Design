@@ -137,7 +137,7 @@ def get_available_datasets():
 def load_dataset(filename):
     filepath = DATASETS_FOLDER / filename
     if not filepath.exists(): return None, None
-    data = np.load(filepath)
+    data = np.load(filepath, allow_pickle=True)
     return data["embeddings"], data["ids"]
 
 def prepare_dataframe(latents, raw_ids, max_points, selected_metric, use_robust=True):

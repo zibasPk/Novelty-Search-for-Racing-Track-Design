@@ -83,7 +83,7 @@ if __name__ == '__main__':
 
     from sklearn.neighbors import NearestNeighbors
 
-    _raw = np.load(PRECOMPILED_EMBEDDINGS_PATH)["embeddings"]
+    _raw = np.load(PRECOMPILED_EMBEDDINGS_PATH, allow_pickle=True)["embeddings"]
 
     _k = 15  # same as archive k_neighbors
     _nbrs = NearestNeighbors(n_neighbors=_k + 1).fit(_raw)
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     # --------------------------------------------------------------
     state = QDRunner.get_state_from_checkpoint(checkpoint_dir)
 
-    _embedding_dim = np.load(PRECOMPILED_EMBEDDINGS_PATH)["embeddings"].shape[1]
+    _embedding_dim = np.load(PRECOMPILED_EMBEDDINGS_PATH, allow_pickle=True)["embeddings"].shape[1]
 
     if state["scheduler"] is not None:
         runner = QDRunner.load_state(
