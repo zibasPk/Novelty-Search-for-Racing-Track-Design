@@ -401,12 +401,14 @@ class ArchiveVisualizer:
 
         # ── Colored images ────────────────────────────────────────────────────
         if evaluation_buffer is not None:
+            bg_cmap = LinearSegmentedColormap.from_list("white_green", ["white", "green"])
+
             elite_raw = {
                 elite["id"]: (evaluation_buffer.entries.get(elite["id"]) or {}).get("raw_fitness") or {}
                 for elite, _, _ in outlines
             }
 
-            for buf_key, label, cmap_name in self.COLORING_METRICS:
+            for buf_key, label, _ in self.COLORING_METRICS:
                 vals = {
                     elite["id"]: elite_raw[elite["id"]].get(buf_key)
                     for elite, _, _ in outlines
@@ -417,7 +419,6 @@ class ArchiveVisualizer:
                     continue
 
                 v_min, v_max = min(vals.values()), max(vals.values())
-                cmap = plt.get_cmap(cmap_name)
                 norm = plt.Normalize(vmin=v_min, vmax=v_max) if v_max > v_min else None
 
                 metric_dir = os.path.join(iter_dir, f"colored_{label}")
@@ -429,13 +430,13 @@ class ArchiveVisualizer:
                     cx = (xs.max() + xs.min()) / 2
                     cy = (ys.max() + ys.min()) / 2
                     v = vals.get(elite["id"])
-                    color = cmap(norm(v)) if (v is not None and norm is not None) else "gray"
+                    bg_color = bg_cmap(norm(v)) if (v is not None and norm is not None) else "lightgray"
                     metric_raw_vals.append(float(v) if v is not None else np.nan)
 
                     fig, ax = plt.subplots(figsize=(4, 4))
-                    fig.patch.set_facecolor("black")
-                    ax.set_facecolor("black")
-                    ax.plot(xs, ys, color=color, linewidth=1.5, zorder=2)
+                    fig.patch.set_facecolor(bg_color)
+                    ax.set_facecolor(bg_color)
+                    ax.plot(xs, ys, color="crimson", linewidth=1.5, zorder=2)
                     ax.set_aspect("equal")
                     ax.set_xlim(cx - half_extent, cx + half_extent)
                     ax.set_ylim(cy - half_extent, cy + half_extent)
