@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mapelite"
+name = "qd"
 version = "0.1.0"
 description = "Quality Diversity for Racing Track Design Using MAP-Elites"
 readme = "README.md"
@@ -42,7 +42,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["mapelite*"]
+include = ["qd*"]
 
 [tool.isort]
 profile = "black"

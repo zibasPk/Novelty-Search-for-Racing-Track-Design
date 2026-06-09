@@ -30,7 +30,7 @@ import fs from 'fs/promises';
 // log.setLevel("debug");
 // runSimulation(100);
 const jsonDir = 'data/voronoi/fitted/';
-const filename = '776.6840486022929.json';
+const filename = '3.2993777360567824.json';
 const filePath = jsonDir + filename;
 
 const data = await fs.readFile(filePath, 'utf-8');
@@ -41,6 +41,6 @@ const { fitness } = await simulate({
   trackSize: trackData.selectedCells.length,
   dataSet: trackData.dataSet,
   selected: trackData.selectedCells,
-  seed: '776.6840486022929',
+  seed: '3.2993777360567824',
   saveJson: JSON_DEBUG
 });

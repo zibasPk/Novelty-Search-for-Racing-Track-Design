@@ -10,7 +10,7 @@ web/src
 .venv/
 logs/
 
-mapelite/first_test/
+qd/first_test/
 
 src/data/tests/
 __pycache__/

@@ -4,9 +4,9 @@ import { generateTrack } from './trackGenerator.js';
 import log from "loglevel";
 import { BBOX } from '../utils/constants.js';
 
-const FITTED_DIR = './data/Archive/voronoi final mixed with new bot tita/fitted';
+const FITTED_DIR = './data/voronoi/fitted';
 const CONCURRENCY_LIMIT = 20;
-const OUTPUT_FILE = './tracks_mixedRng_tita.json';
+const OUTPUT_FILE = './tracks_mixedRng_new.json';
 
 log.setLevel('info');
 

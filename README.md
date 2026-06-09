@@ -26,14 +26,14 @@ MSc thesis project to evolve diverse, high‑quality racing tracks with MAP‑El
 
 
 ## How to run
-Requires Docker , Python 3.12.10 and node v24.10.0
+Requires Docker , Python >= 3.12.10 and node >= v24.10.0
 
 1. In root folder:
     - `pip install -e .[dev]` (to install python dependencies)
 2. In src folder:
     - `docker build -t torcs:dev .` (to build TORCS image)
     - `npm install` (install dependencies for api)
-3. To run the algorithm use the notebook `mapelite/novelty_search.ipynb`.
+3. To run the algorithm use the notebook `qd/novelty_search.ipynb`.
 
 
 ## Borrowable bits

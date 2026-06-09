@@ -387,6 +387,208 @@ static void normSeg(tTrackSeg *curSeg)
 }
 
 
+/** After snapping end vertices of the last segment to close the track loop,
+    recompute all derived geometry (angles, length/arc, slope factors) for
+    the last segment and propagate changes to its side/border/barrier chain.
+
+    @param[in,out] lastSeg The last main track segment (ring tail)
+    @param[in]     firstSeg The first main track segment (ring head)
+ */
+static void rebuildClosureGeometry(tTrackSeg* lastSeg, tTrackSeg* firstSeg)
+{
+    tdble width = lastSeg->width;
+
+    /* Snap main segment end vertices to first segment start */
+    lastSeg->vertex[TR_ER] = firstSeg->vertex[TR_SR];
+    lastSeg->vertex[TR_EL] = firstSeg->vertex[TR_SL];
+
+    /* Target end heading: match the first segment's start heading */
+    tdble targetZE = firstSeg->angle[TR_ZS];
+    tdble dHeading = targetZE - lastSeg->angle[TR_ZE];
+
+    /* Recompute main segment derived geometry */
+    switch (lastSeg->type) {
+    case TR_STR: {
+	/* Recompute length from snapped vertex midpoints */
+	tdble dx = ((lastSeg->vertex[TR_ER].x + lastSeg->vertex[TR_EL].x) -
+		    (lastSeg->vertex[TR_SR].x + lastSeg->vertex[TR_SL].x)) * 0.5;
+	tdble dy = ((lastSeg->vertex[TR_ER].y + lastSeg->vertex[TR_EL].y) -
+		    (lastSeg->vertex[TR_SR].y + lastSeg->vertex[TR_SL].y)) * 0.5;
+	lastSeg->length = sqrt(dx * dx + dy * dy);
+	lastSeg->angle[TR_ZE] = targetZE;
+
+	/* Recompute pitch angles */
+	if (lastSeg->length > 0) {
+	    lastSeg->angle[TR_YR] = atan2(lastSeg->vertex[TR_ER].z - lastSeg->vertex[TR_SR].z, lastSeg->length);
+	    lastSeg->angle[TR_YL] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_SL].z, lastSeg->length);
+	}
+	lastSeg->angle[TR_XE] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_ER].z, width);
+
+	/* Recompute slope factors */
+	if (lastSeg->length > 0) {
+	    lastSeg->Kzl = tan(lastSeg->angle[TR_YR]);
+	    lastSeg->Kzw = (lastSeg->angle[TR_XE] - lastSeg->angle[TR_XS]) / lastSeg->length;
+	}
+
+	/* Right-side normal from start heading (unchanged, authoritative) */
+	tdble alf = lastSeg->angle[TR_ZS];
+	lastSeg->rgtSideNormal.x = -sin(alf);
+	lastSeg->rgtSideNormal.y = cos(alf);
+	break;
+    }
+    case TR_LFT: {
+	/* Adjust arc by heading difference (avoids 2*PI wrapping issues) */
+	lastSeg->angle[TR_ZE] = targetZE;
+	lastSeg->arc += dHeading;
+	lastSeg->length = lastSeg->radius * lastSeg->arc;
+
+	tdble innerradius = lastSeg->radiusl;
+	if (lastSeg->arc > 0) {
+	    lastSeg->angle[TR_YR] = atan2(lastSeg->vertex[TR_ER].z - lastSeg->vertex[TR_SR].z,
+					  lastSeg->arc * (innerradius + width));
+	    lastSeg->angle[TR_YL] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_SL].z,
+					  lastSeg->arc * innerradius);
+	}
+	lastSeg->angle[TR_XE] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_ER].z, width);
+
+	if (lastSeg->arc > 0) {
+	    lastSeg->Kzl = tan(lastSeg->angle[TR_YR]) * (innerradius + width);
+	    lastSeg->Kzw = (lastSeg->angle[TR_XE] - lastSeg->angle[TR_XS]) / lastSeg->arc;
+	}
+	break;
+    }
+    case TR_RGT: {
+	/* For right turns arc = ZS - ZE, so arc decreases when ZE increases */
+	lastSeg->angle[TR_ZE] = targetZE;
+	lastSeg->arc -= dHeading;
+	lastSeg->length = lastSeg->radius * lastSeg->arc;
+
+	tdble innerradius = lastSeg->radiusr;
+	if (lastSeg->arc > 0) {
+	    lastSeg->angle[TR_YR] = atan2(lastSeg->vertex[TR_ER].z - lastSeg->vertex[TR_SR].z,
+					  lastSeg->arc * innerradius);
+	    lastSeg->angle[TR_YL] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_SL].z,
+					  lastSeg->arc * (innerradius + width));
+	}
+	lastSeg->angle[TR_XE] = atan2(lastSeg->vertex[TR_EL].z - lastSeg->vertex[TR_ER].z, width);
+
+	if (lastSeg->arc > 0) {
+	    lastSeg->Kzl = tan(lastSeg->angle[TR_YR]) * innerradius;
+	    lastSeg->Kzw = (lastSeg->angle[TR_XE] - lastSeg->angle[TR_XS]) / lastSeg->arc;
+	}
+	break;
+    }
+    }
+
+    /* Propagate vertex changes to side/border chain and recompute barrier normals */
+    for (int side = 0; side < 2; side++) {
+	tTrackSeg* parentSeg = lastSeg;
+	tTrackSeg* sideSeg = lastSeg->side[side];
+
+	while (sideSeg != NULL) {
+	    /* Update inner end vertex from parent's outer end vertex */
+	    if (side == 1) {
+		sideSeg->vertex[TR_ER] = parentSeg->vertex[TR_EL];
+	    } else {
+		sideSeg->vertex[TR_EL] = parentSeg->vertex[TR_ER];
+	    }
+
+	    /* Update end heading */
+	    sideSeg->angle[TR_ZE] = targetZE;
+
+	    /* Recompute outer end vertex and derived properties */
+	    switch (sideSeg->type) {
+	    case TR_STR: {
+		tdble ew = sideSeg->endWidth;
+		if (side == 1) {
+		    sideSeg->vertex[TR_EL].x = sideSeg->vertex[TR_ER].x + ew * lastSeg->rgtSideNormal.x;
+		    sideSeg->vertex[TR_EL].y = sideSeg->vertex[TR_ER].y + ew * lastSeg->rgtSideNormal.y;
+		    sideSeg->vertex[TR_EL].z = sideSeg->vertex[TR_ER].z + ew * tan(sideSeg->angle[TR_XE]);
+		} else {
+		    sideSeg->vertex[TR_ER].x = sideSeg->vertex[TR_EL].x - ew * lastSeg->rgtSideNormal.x;
+		    sideSeg->vertex[TR_ER].y = sideSeg->vertex[TR_EL].y - ew * lastSeg->rgtSideNormal.y;
+		    sideSeg->vertex[TR_ER].z = sideSeg->vertex[TR_EL].z - ew * tan(sideSeg->angle[TR_XE]);
+		}
+		sideSeg->rgtSideNormal = lastSeg->rgtSideNormal;
+
+		if (sideSeg->length > 0) {
+		    sideSeg->angle[TR_YR] = atan2(sideSeg->vertex[TR_ER].z - sideSeg->vertex[TR_SR].z, sideSeg->length);
+		    sideSeg->angle[TR_YL] = atan2(sideSeg->vertex[TR_EL].z - sideSeg->vertex[TR_SL].z, sideSeg->length);
+		    sideSeg->Kzl = tan(sideSeg->angle[TR_YR]);
+		    sideSeg->Kzw = (sideSeg->angle[TR_XE] - sideSeg->angle[TR_XS]) / sideSeg->length;
+		    sideSeg->Kyl = (sideSeg->endWidth - sideSeg->startWidth) / sideSeg->length;
+		}
+		break;
+	    }
+	    case TR_LFT:
+	    case TR_RGT: {
+		tdble sign = (sideSeg->type == TR_LFT) ? 1.0 : -1.0;
+
+		/* Update arc and length from main segment */
+		sideSeg->arc = lastSeg->arc;
+		sideSeg->length = sideSeg->radius * sideSeg->arc;
+
+		tdble endAngle = sideSeg->angle[TR_CS] + sign * sideSeg->arc;
+		tdble ew = sideSeg->endWidth;
+
+		if (side == 1) {
+		    sideSeg->vertex[TR_EL].x = sideSeg->vertex[TR_ER].x - sign * ew * cos(endAngle);
+		    sideSeg->vertex[TR_EL].y = sideSeg->vertex[TR_ER].y - sign * ew * sin(endAngle);
+		    sideSeg->vertex[TR_EL].z = sideSeg->vertex[TR_ER].z + ew * tan(sideSeg->angle[TR_XE]);
+		} else {
+		    sideSeg->vertex[TR_ER].x = sideSeg->vertex[TR_EL].x + sign * ew * cos(endAngle);
+		    sideSeg->vertex[TR_ER].y = sideSeg->vertex[TR_EL].y + sign * ew * sin(endAngle);
+		    sideSeg->vertex[TR_ER].z = sideSeg->vertex[TR_EL].z - ew * tan(sideSeg->angle[TR_XE]);
+		}
+
+		if (sideSeg->arc > 0) {
+		    sideSeg->angle[TR_YR] = atan2(sideSeg->vertex[TR_ER].z - sideSeg->vertex[TR_SR].z,
+						  sideSeg->arc * sideSeg->radiusr);
+		    sideSeg->angle[TR_YL] = atan2(sideSeg->vertex[TR_EL].z - sideSeg->vertex[TR_SL].z,
+						  sideSeg->arc * sideSeg->radiusl);
+		    sideSeg->Kzl = tan(sideSeg->angle[TR_YR]) * sideSeg->radiusr;
+		    sideSeg->Kzw = (sideSeg->angle[TR_XE] - sideSeg->angle[TR_XS]) / sideSeg->arc;
+		    sideSeg->Kyl = (sideSeg->endWidth - sideSeg->startWidth) / sideSeg->arc;
+		}
+		break;
+	    }
+	    }
+
+	    parentSeg = sideSeg;
+	    sideSeg = sideSeg->side[side];
+	}
+
+	/* Recompute barrier normal from outermost side segment */
+	if (lastSeg->barrier[side]) {
+	    tTrackSeg *bseg = lastSeg;
+	    int bstart, bend;
+	    float bsign;
+
+	    if (side == TR_SIDE_LFT) {
+		bstart = TR_SL;
+		bend = TR_EL;
+		bsign = -1.0f;
+	    } else {
+		bstart = TR_SR;
+		bend = TR_ER;
+		bsign = 1.0f;
+	    }
+
+	    while (bseg->side[side] != NULL) {
+		bseg = bseg->side[side];
+	    }
+
+	    vec2f n(
+		-(bseg->vertex[bend].y - bseg->vertex[bstart].y) * bsign,
+		(bseg->vertex[bend].x - bseg->vertex[bstart].x) * bsign
+	    );
+	    n.normalize();
+	    lastSeg->barrier[side]->normal = n;
+	}
+    }
+}
+
+
 static void CreateSegRing(void *TrackHandle, tTrack *theTrack, int ext)
 {
     int		j;
@@ -880,29 +1082,24 @@ static void CreateSegRing(void *TrackHandle, tTrack *theTrack, int ext)
 	GfHashRelease(segNameHash, NULL);
     }
 
-    /* printf("\n"); */
+    /* If the track doesn't close perfectly, snap the last segment's end
+     * vertices to the first segment's start and rebuild all derived geometry
+     * (angles, length/arc, slope factors, side segments, barrier normals). */
     tTrackSeg* lastSeg = root;
-		tTrackSeg* firstSeg = root->next;
+    tTrackSeg* firstSeg = root->next;
 
-		// Calculate the distance between the end of the last segment and the start of the first segment.
-		tdble d_x = firstSeg->vertex[TR_SR].x - lastSeg->vertex[TR_ER].x;
-		tdble d_y = firstSeg->vertex[TR_SR].y - lastSeg->vertex[TR_ER].y;
-		tdble d_z = firstSeg->vertex[TR_SR].z - lastSeg->vertex[TR_ER].z;
-		tdble dist = sqrt(d_x * d_x + d_y * d_y + d_z * d_z);
+    tdble d_x = firstSeg->vertex[TR_SR].x - lastSeg->vertex[TR_ER].x;
+    tdble d_y = firstSeg->vertex[TR_SR].y - lastSeg->vertex[TR_ER].y;
+    tdble d_z = firstSeg->vertex[TR_SR].z - lastSeg->vertex[TR_ER].z;
+    tdble dist = sqrt(d_x * d_x + d_y * d_y + d_z * d_z);
 
-		// Define a small threshold to account for floating-point inaccuracies.
-		const double CONNECTION_THRESHOLD = 0.01;
+    const double CONNECTION_THRESHOLD = 0.01;
 
-		// If the distance is greater than the threshold, adjust the end vertices of the last segment.
-		if (dist > CONNECTION_THRESHOLD) {
-				lastSeg->vertex[TR_ER].x = firstSeg->vertex[TR_SR].x;
-				lastSeg->vertex[TR_ER].y = firstSeg->vertex[TR_SR].y;
-				lastSeg->vertex[TR_ER].z = firstSeg->vertex[TR_SR].z;
-
-				lastSeg->vertex[TR_EL].x = firstSeg->vertex[TR_SL].x;
-				lastSeg->vertex[TR_EL].y = firstSeg->vertex[TR_SL].y;
-				lastSeg->vertex[TR_EL].z = firstSeg->vertex[TR_SL].z;
-		}
+    if (dist > CONNECTION_THRESHOLD) {
+	tdble oldLength = lastSeg->length;
+	rebuildClosureGeometry(lastSeg, firstSeg);
+	totLength += (lastSeg->length - oldLength);
+    }
 
     theTrack->seg = root;
     theTrack->length = totLength;
