@@ -49,7 +49,7 @@ class ArchiveVisualizer:
         self.seed = seed
         self._track_cache: dict = {}
 
-        embeddings = np.load(precomp_embeddings_path, allow_pickle=True)["embeddings"]
+        embeddings = np.load(precomp_embeddings_path)["embeddings"]
         umap_m = umap.UMAP(n_components=2, random_state=seed)
         self._umap_model = umap_m.fit(embeddings)
         self._precomp_umaps = umap_m.transform(embeddings)

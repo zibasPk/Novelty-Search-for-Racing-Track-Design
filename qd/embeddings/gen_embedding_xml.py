@@ -212,7 +212,7 @@ def load_and_preprocess_data(data_path):
         raise FileNotFoundError(f"Dataset not found at {data_path}")
 
     print("Loading and preprocessing data...")
-    dataset_npz = np.load(data_path, allow_pickle=True)
+    dataset_npz = np.load(data_path)
     flat_tracks = dataset_npz["data"]
     indices = dataset_npz["indices"]
     raw_ids = dataset_npz["ids"]
