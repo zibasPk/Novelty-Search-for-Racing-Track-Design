@@ -99,9 +99,10 @@ class EvaluatorMetrics(Evaluator):
         measure = np.zeros((self.embedding_dim,))
         fit_score = INVALID_SCORE
         phenotype_data = None
+        raw_fitness = None
 
         if not is_valid_solution_array(solution_to_array(sol)):
-            return sol_id, False, "Invalid solution array", fit_score, measure, phenotype_data
+            return sol_id, False, "Invalid solution array", fit_score, measure, phenotype_data, raw_fitness
 
         try:
             r = requests.post(f"{BASE_URL}/evaluate", json=sol, timeout=60)
@@ -112,15 +113,18 @@ class EvaluatorMetrics(Evaluator):
             # Extract raw fitness metrics
             fit = r_json.get("fitness", {})
             # log.trace("Raw fitness metrics", sol_id=sol_id, metrics=fit)
-            
+
+            # Store scalar fitness metrics (exclude embedding_data — already in phenotype_data)
+            raw_fitness = {k: v for k, v in fit.items() if k != "embedding_data"}
+
             # Extract the metrics used for calculating the measure (embedding)
             phenotype_data = fit.get("embedding_data", [])
-            
+
             if not EvaluatorMetrics.validate_metrics(phenotype_data):
                 raise ValueError("Invalid metrics for embedding (too many zeros)")
-            
+
             measure = self.measure_from_metrics(phenotype_data)
-            
+
             # Compute final fitness score
             fit_score = self.fitness_formula(fit)
 
@@ -128,6 +132,6 @@ class EvaluatorMetrics(Evaluator):
             ok = False
             msg = str(e)
 
-        return sol_id, ok, msg, fit_score, measure, phenotype_data
+        return sol_id, ok, msg, fit_score, measure, phenotype_data, raw_fitness
     
    

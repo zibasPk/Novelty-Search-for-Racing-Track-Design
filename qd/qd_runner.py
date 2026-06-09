@@ -110,7 +110,7 @@ class EvaluationBuffer:
         else:
             log.info("Buffer cleared (no file to delete)", path=self.buffer_path)
 
-    def record(self, sol_id, sol_dict: dict, measure, score: float, ok: bool, phenotype_data=None):
+    def record(self, sol_id, sol_dict: dict, measure, score: float, ok: bool, phenotype_data=None, raw_fitness=None):
         """Record a single evaluated track.
 
         Parameters
@@ -127,6 +127,9 @@ class EvaluationBuffer:
             Fitness score returned by the evaluator.
         ok : bool
             Whether the evaluation succeeded.
+        raw_fitness : dict, optional
+            Raw scalar metrics from /evaluate (length, right_len, left_len,
+            total_overtakes, deltaX, …) excluding embedding_data.
         """
         self.entries[sol_id] = {
             "id": sol_id,
@@ -138,6 +141,7 @@ class EvaluationBuffer:
             "score": float(score),
             "valid": ok,
             "phenotype_data": phenotype_data,
+            "raw_fitness": raw_fitness,
         }
 
     def __getitem__(self, sol_id):
@@ -377,7 +381,7 @@ class QDRunner:
 
             score_list, clean_solutions = [], []
             # Measure is the embedding returned by the evaluator
-            for (sol_id, ok, msg, objective_score, measure, phenotype_data), sol_dict in zip(gathered, sol_dicts):
+            for (sol_id, ok, msg, objective_score, measure, phenotype_data, raw_fitness), sol_dict in zip(gathered, sol_dicts):
                 if not ok:
                     log.debug("Clamping bad score",
                                 sol_id=sol_id, reason=msg)
@@ -390,7 +394,7 @@ class QDRunner:
                         self.global_best_id = sol_id
 
                 self._evaluation_buffer.record(
-                    sol_id, sol_dict, measure, objective_score, ok, phenotype_data)
+                    sol_id, sol_dict, measure, objective_score, ok, phenotype_data, raw_fitness)
                 clean_solutions.append((objective_score, measure))
                 score_list.append(objective_score)
 
@@ -495,7 +499,7 @@ class QDRunner:
                 self._evaluation_buffer.save()
 
                 self._start_retraining_routine()
-                self._visualizer.save_elite_images(i)
+                self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
 
 
         # Final save

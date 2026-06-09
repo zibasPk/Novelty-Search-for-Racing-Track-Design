@@ -13,6 +13,7 @@ import numpy as np
 import os
 import json
 import datetime
+from io import BytesIO
 import umap
 import requests
 from qd.logging_config import get_logger
@@ -310,18 +311,47 @@ class ArchiveVisualizer:
             self._track_cache[sol_id] = result
         return result
 
-    def save_elite_images(self, iteration_idx, save_dir=None):
-        """Render every current archive elite's track reconstruction to its own PNG.
+    # Metrics used to produce per-metric colored image sets.
+    # Each entry: (buffer key, human label, colormap name)
+    COLORING_METRICS = [
+        ("curvature_entropy",  "curvature_entropy",  "plasma"),
+        ("avg_radius_mean",    "avg_radius_mean",     "viridis"),
+        ("speed_entropy",      "speed_entropy",       "inferno"),
+        ("total_overtakes",    "total_overtakes",     "YlOrRd"),
+    ]
 
-        Images are written to ``<save_dir>/<iteration_idx>/elite_<id>.png``;
-        the per-iteration directory is created if it doesn't exist yet.
-        Elites whose reconstruction can't be fetched (e.g. track server
-        unavailable) are skipped.
+    @staticmethod
+    def _render_fig(fig, dpi=150):
+        """Save *fig* into a BytesIO buffer and return ``(png_bytes, uint8 RGBA array)``."""
+        buf = BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi)
+        png_bytes = buf.getvalue()
+        buf.seek(0)
+        img = plt.imread(buf)                        # float32 RGBA [0, 1]
+        return png_bytes, (img * 255).astype(np.uint8)
 
-        Every PNG shares the same fixed canvas (figure size + DPI, square)
-        and the same view window — sized to the largest track and centered
-        on each individual track — so all images come out at identical
-        resolution while preserving each track's true relative size.
+    def save_elite_images(self, iteration_idx, save_dir=None, evaluation_buffer=None):
+        """Render every current archive elite's track reconstruction to its own PNG
+        and collect all images into a single compressed NPZ file.
+
+        Saves a plain set (white bg, crimson line) and — when *evaluation_buffer*
+        is provided — one colored set per metric in ``COLORING_METRICS``, where
+        the line color encodes the metric value normalized across all current elites.
+
+        Directory layout::
+
+            <save_dir>/<iteration_idx>/plain/elite_<id>.png
+            <save_dir>/<iteration_idx>/colored_<metric>/elite_<id>.png
+            <save_dir>/<iteration_idx>/elite_images.npz
+
+        The NPZ contains:
+            ids                    – (N,) elite IDs
+            plain                  – (N, H, W, 4) uint8 RGBA
+            colored_<metric>       – (N, H, W, 4) uint8 RGBA  [one per metric]
+            metric_<metric>        – (N,) float32 raw values   [one per metric]
+
+        Every PNG shares the same fixed canvas and view window so all images are
+        at identical resolution while preserving each track's true relative size.
         """
         if save_dir is None:
             save_dir = self.images_dir
@@ -345,22 +375,85 @@ class ArchiveVisualizer:
             log.info("No elite track outlines available to save", iteration=iteration_idx)
             return
 
-        half_extent = max_span / 2 * 1.05  # small margin so the largest track isn't clipped
+        half_extent = max_span / 2 * 1.05
 
+        npz_arrays = {"ids": np.array([elite["id"] for elite, _, _ in outlines])}
+
+        # ── Plain images ──────────────────────────────────────────────────────
+        plain_dir = os.path.join(iter_dir, "plain")
+        os.makedirs(plain_dir, exist_ok=True)
+        plain_imgs = []
         for elite, xs, ys in outlines:
             cx = (xs.max() + xs.min()) / 2
             cy = (ys.max() + ys.min()) / 2
-
             fig, ax = plt.subplots(figsize=(4, 4))
             ax.plot(xs, ys, color="crimson", linewidth=1.2, zorder=2)
             ax.set_aspect("equal")
             ax.set_xlim(cx - half_extent, cx + half_extent)
             ax.set_ylim(cy - half_extent, cy + half_extent)
             ax.set_axis_off()
-            fig.savefig(os.path.join(iter_dir, f"elite_{elite['id']}.png"), dpi=150)
+            png_bytes, img_arr = self._render_fig(fig)
+            with open(os.path.join(plain_dir, f"elite_{elite['id']}.png"), "wb") as f:
+                f.write(png_bytes)
+            plain_imgs.append(img_arr)
             plt.close(fig)
+        npz_arrays["plain"] = np.array(plain_imgs)
 
-        log.info("Elite track images saved", count=len(outlines), total=len(elites_dicts), path=iter_dir)
+        # ── Colored images ────────────────────────────────────────────────────
+        if evaluation_buffer is not None:
+            elite_raw = {
+                elite["id"]: (evaluation_buffer.entries.get(elite["id"]) or {}).get("raw_fitness") or {}
+                for elite, _, _ in outlines
+            }
+
+            for buf_key, label, cmap_name in self.COLORING_METRICS:
+                vals = {
+                    elite["id"]: elite_raw[elite["id"]].get(buf_key)
+                    for elite, _, _ in outlines
+                    if elite_raw[elite["id"]].get(buf_key) is not None
+                }
+                if not vals:
+                    log.debug("Skipping coloring — metric absent from buffer", metric=label)
+                    continue
+
+                v_min, v_max = min(vals.values()), max(vals.values())
+                cmap = plt.get_cmap(cmap_name)
+                norm = plt.Normalize(vmin=v_min, vmax=v_max) if v_max > v_min else None
+
+                metric_dir = os.path.join(iter_dir, f"colored_{label}")
+                os.makedirs(metric_dir, exist_ok=True)
+                colored_imgs = []
+                metric_raw_vals = []
+
+                for elite, xs, ys in outlines:
+                    cx = (xs.max() + xs.min()) / 2
+                    cy = (ys.max() + ys.min()) / 2
+                    v = vals.get(elite["id"])
+                    color = cmap(norm(v)) if (v is not None and norm is not None) else "gray"
+                    metric_raw_vals.append(float(v) if v is not None else np.nan)
+
+                    fig, ax = plt.subplots(figsize=(4, 4))
+                    fig.patch.set_facecolor("black")
+                    ax.set_facecolor("black")
+                    ax.plot(xs, ys, color=color, linewidth=1.5, zorder=2)
+                    ax.set_aspect("equal")
+                    ax.set_xlim(cx - half_extent, cx + half_extent)
+                    ax.set_ylim(cy - half_extent, cy + half_extent)
+                    ax.set_axis_off()
+                    png_bytes, img_arr = self._render_fig(fig)
+                    with open(os.path.join(metric_dir, f"elite_{elite['id']}.png"), "wb") as f:
+                        f.write(png_bytes)
+                    colored_imgs.append(img_arr)
+                    plt.close(fig)
+
+                npz_arrays[f"colored_{label}"] = np.array(colored_imgs)
+                npz_arrays[f"metric_{label}"] = np.array(metric_raw_vals, dtype=np.float32)
+
+        npz_path = os.path.join(iter_dir, "elite_images.npz")
+        np.savez_compressed(npz_path, **npz_arrays)
+
+        log.info("Elite track images saved", count=len(outlines),
+                 total=len(elites_dicts), path=iter_dir)
 
     def plot_heatmap(self, iteration, save_dir=None):
         """2D UMAP compression of the archive's behavioural space, colored by fitness."""
