@@ -528,21 +528,25 @@ class QDRunner:
         return type(current_threshold)(new_threshold) # cast to the same type as current_threshold to avoid any issues
 
     def _remap_archive(self, new_measures):
-        new_threshold = self._recalculate_novelty_threshold()
-        log.info("Recalculating novelty threshold and remapping archive", new_threshold=new_threshold)
+        current_threshold = self.archive.novelty_threshold
+        log.info("Remapping archive", current_threshold=current_threshold)
         current_elites = self.archive.data()
         solutions  = current_elites["solution"]
         objectives = current_elites["objective"]
         sol_to_add, obj_to_add, measure_to_add = self._filter_elites_by_novelty(
-            solutions, objectives, new_measures, new_threshold
+            solutions, objectives, new_measures, current_threshold
         )
-        
+
         self.archive.clear()
         self._visualizer.reset_grid_state()
-        self.archive._novelty_threshold = new_threshold # a bit of a hack to avoid reinitializing the archive just to update the threshold, since add() is the only method that uses it and we call it right after
-        
+
         with self._track_add_status() as (new_insertions, substitutions):
             self.archive.add(sol_to_add, obj_to_add, measure_to_add)
+
+        # Recalculate threshold based on the actual post-remap archive size
+        new_threshold = self._recalculate_novelty_threshold()
+        self.archive._novelty_threshold = new_threshold # a bit of a hack to avoid reinitializing the archive just to update the threshold, since add() is the only method that uses it and we call it right after
+        log.info("Novelty threshold updated after remap", new_threshold=new_threshold)
 
         if len(new_insertions) != len(sol_to_add):
             raise ValueError(
