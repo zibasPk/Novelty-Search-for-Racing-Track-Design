@@ -374,6 +374,22 @@ class QDRunner:
         """Access the ``ArchiveVisualizer`` for post-run plots and export."""
         return self._visualizer
 
+    def _save_checkpoint(self, iteration, save_buffer=True, message="Checkpoint saved"):
+        """Pickle the run state (scheduler, seed, iteration, stats) and
+        optionally flush the evaluation buffer."""
+        ckpt_name = os.path.join(self.checkpoint_dir, f"checkpoint_{iteration:04d}.pkl")
+        with open(ckpt_name, "wb") as f:
+            pickle.dump({
+                "scheduler": self.scheduler,
+                "seed": self.seed,
+                "iteration": iteration,
+                "stats": self.stats,
+            }, f)
+        log.info(message, path=ckpt_name, iteration=iteration)
+
+        if save_buffer:
+            self._evaluation_buffer.save()
+
     def run(self, total_iters, start_iter=None):
         """Execute the ask → evaluate → tell loop.
 
@@ -493,47 +509,18 @@ class QDRunner:
 
             # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
-                ckpt_name =  os.path.join(self.checkpoint_dir, f"checkpoint_{i:04d}.pkl")
-                with open(ckpt_name, "wb") as f:
-                    pickle.dump({
-                        "scheduler": self.scheduler,
-                        "seed": self.seed,
-                        "iteration": i,
-                        "stats": self.stats,
-                    }, f)
-                log.info("Checkpoint saved", path=ckpt_name, iteration=i)
-
-                self._evaluation_buffer.save()
+                self._save_checkpoint(i)
 
             if not population_iter and do_finetune and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
-                ckpt_name =  os.path.join(self.checkpoint_dir, f"checkpoint_{i:04d}.pkl")
-                with open(ckpt_name, "wb") as f:
-                    pickle.dump({
-                        "scheduler": self.scheduler,
-                        "seed": self.seed,
-                        "iteration": i,
-                        "stats": self.stats,
-                    }, f)
-                log.info("Checkpoint saved", path=ckpt_name, iteration=i)
-                self._evaluation_buffer.save()
+                self._save_checkpoint(i)
 
                 self._start_retraining_routine(i)
                 self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
 
 
         # Final save
-        ckpt_name = os.path.join(self.checkpoint_dir, f"checkpoint_{i:04d}.pkl")
-        with open(ckpt_name, "wb") as f:
-            pickle.dump({
-                "scheduler": self.scheduler,
-                "iteration": i,
-                "stats": self.stats,
-                "seed": self.seed,
-            }, f)
-        log.info("Checkpoint saved", path=ckpt_name, iteration=i)
-
-        self._evaluation_buffer.save()
+        self._save_checkpoint(i)
         return self.global_best_score, self.global_best_id, self.stats
     
     def _recalculate_novelty_threshold(self) -> float:
@@ -600,15 +587,7 @@ class QDRunner:
 
         # Overwrite this iteration's checkpoint with the remapped archive so
         # checkpoint and saved model stay consistent on resume.
-        ckpt_name = os.path.join(self.checkpoint_dir, f"checkpoint_{iteration:04d}.pkl")
-        with open(ckpt_name, "wb") as f:
-            pickle.dump({
-                "scheduler": self.scheduler,
-                "seed": self.seed,
-                "iteration": iteration,
-                "stats": self.stats,
-            }, f)
-        log.info("Checkpoint updated after retraining", path=ckpt_name, iteration=iteration)
+        self._save_checkpoint(iteration, save_buffer=False, message="Checkpoint updated after retraining")
 
         self.client.close()
         self.cluster.close()
