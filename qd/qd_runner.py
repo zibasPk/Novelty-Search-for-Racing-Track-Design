@@ -245,8 +245,28 @@ class QDRunner:
         self.cluster = cluster
         self.evaluator_future = evaluator_future
 
+    @staticmethod
+    def _latest_finetuned_model(checkpoint_dir, max_iteration=None):
+        """Return the path of the most recent ``finetuned_model_*.pt`` saved at
+        or before ``max_iteration``, or ``None`` if there is none."""
+        paths = sorted(glob.glob(os.path.join(checkpoint_dir, "finetuned_model_*.pt")))
+        if max_iteration is not None:
+            paths = [
+                p for p in paths
+                if int(os.path.basename(p).removeprefix("finetuned_model_").removesuffix(".pt")) <= max_iteration
+            ]
+        return paths[-1] if paths else None
+
     @classmethod
     def load_state(cls, state, pretrained_model_path, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed, do_retraining=False):
+        # If the run already went through a retraining cycle, resume with the
+        # finetuned VAE that produced the checkpointed archive's measures —
+        # not the original pretrained model.
+        finetuned_path = cls._latest_finetuned_model(checkpoint_dir, max_iteration=state["start_iter"] - 1)
+        if finetuned_path is not None:
+            log.info("Resuming with finetuned VAE", path=finetuned_path)
+            pretrained_model_path = finetuned_path
+
         instance = cls(
             scheduler=state["scheduler"],
             archive=state["archive"],
@@ -498,7 +518,7 @@ class QDRunner:
                 log.info("Checkpoint saved", path=ckpt_name, iteration=i)
                 self._evaluation_buffer.save()
 
-                self._start_retraining_routine()
+                self._start_retraining_routine(i)
                 self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
 
 
@@ -555,9 +575,9 @@ class QDRunner:
                 "Check the novelty-filter and add_status tracking."
             )
     
-    def _start_retraining_routine(self):
+    def _start_retraining_routine(self, iteration):
         """Orchestrate one retraining cycle:
-        finetune → remap measures → filter → rebuild archive → reset Dask.
+        finetune → remap measures → filter → rebuild archive → save model → reset Dask.
         """
         current_elites = self.archive.data()
         solutions  = current_elites["solution"]
@@ -571,6 +591,25 @@ class QDRunner:
 
         finetuned_model.cpu()
         self._embedding_model = finetuned_model
+
+        # Persist the finetuned VAE so a resumed run uses the same latent
+        # space the archive was just remapped into.
+        model_path = os.path.join(self.checkpoint_dir, f"finetuned_model_{iteration:04d}.pt")
+        finetuned_model.save_pretrained(model_path, parameters=dict(_FT))
+        log.info("Finetuned model saved", path=model_path, iteration=iteration)
+
+        # Overwrite this iteration's checkpoint with the remapped archive so
+        # checkpoint and saved model stay consistent on resume.
+        ckpt_name = os.path.join(self.checkpoint_dir, f"checkpoint_{iteration:04d}.pkl")
+        with open(ckpt_name, "wb") as f:
+            pickle.dump({
+                "scheduler": self.scheduler,
+                "seed": self.seed,
+                "iteration": iteration,
+                "stats": self.stats,
+            }, f)
+        log.info("Checkpoint updated after retraining", path=ckpt_name, iteration=iteration)
+
         self.client.close()
         self.cluster.close()
         self.client, self.cluster, self.evaluator_future, _ = self.setup_dask(

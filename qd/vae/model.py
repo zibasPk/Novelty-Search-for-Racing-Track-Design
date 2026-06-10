@@ -218,10 +218,12 @@ class MetricsVAE(nn.Module):
                  freq_bins=MODEL_CONFIG["freq_bins"]):
         super().__init__()
 
+        self.input_dim   = input_dim
         self.hidden_dim  = hidden_dim
         self.latent_dim  = latent_dim
         self.n_layers    = n_layers
         self.max_seq_len = max_seq_len
+        self.kernel_size = kernel_size
         self.freq_bins   = freq_bins
 
         # ── Encoder ──────────────────────────────────────────────────────────
@@ -250,6 +252,22 @@ class MetricsVAE(nn.Module):
             kernel_size=kernel_size,
             max_seq_len=max_seq_len,
         )
+
+    def save_pretrained(self, path, parameters=None):
+        """Save a checkpoint in the format expected by :meth:`load_pretrained`."""
+        torch.save({
+            "config": {
+                "input_dim":   self.input_dim,
+                "hidden_dim":  self.hidden_dim,
+                "latent_dim":  self.latent_dim,
+                "n_layers":    self.n_layers,
+                "max_seq_len": self.max_seq_len,
+                "kernel_size": self.kernel_size,
+                "freq_bins":   self.freq_bins,
+            },
+            "state_dict": self.state_dict(),
+            "parameters": parameters or {},
+        }, path)
 
     @classmethod
     def load_pretrained(cls, path, device):
