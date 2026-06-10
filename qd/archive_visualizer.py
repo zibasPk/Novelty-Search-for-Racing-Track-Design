@@ -330,29 +330,8 @@ class ArchiveVisualizer:
         img = plt.imread(buf)                        # float32 RGBA [0, 1]
         return png_bytes, (img * 255).astype(np.uint8)
 
-    def save_elite_images(self, iteration_idx, save_dir=None, evaluation_buffer=None):
-        """Render every current archive elite's track reconstruction to its own PNG
-        and collect all images into a single compressed NPZ file.
-
-        Saves a plain set (white bg, crimson line) and — when *evaluation_buffer*
-        is provided — one colored set per metric in ``COLORING_METRICS``, where
-        the line color encodes the metric value normalized across all current elites.
-
-        Directory layout::
-
-            <save_dir>/<iteration_idx>/plain/elite_<id>.png
-            <save_dir>/<iteration_idx>/colored_<metric>/elite_<id>.png
-            <save_dir>/<iteration_idx>/elite_images.npz
-
-        The NPZ contains:
-            ids                    – (N,) elite IDs
-            plain                  – (N, H, W, 4) uint8 RGBA
-            colored_<metric>       – (N, H, W, 4) uint8 RGBA  [one per metric]
-            metric_<metric>        – (N,) float32 raw values   [one per metric]
-
-        Every PNG shares the same fixed canvas and view window so all images are
-        at identical resolution while preserving each track's true relative size.
-        """
+    def save_elite_images(self, iteration_idx, save_dir=None, evaluation_buffer=None, save_pngs=False):
+        """For each elite in the archive, render its track outline into a plain PNG and a set of colored PNGs (one per metric in COLORING_METRICS), and save all images + raw metric values into a compressed NPZ file."""
         if save_dir is None:
             save_dir = self.images_dir
 
@@ -380,8 +359,9 @@ class ArchiveVisualizer:
         npz_arrays = {"ids": np.array([elite["id"] for elite, _, _ in outlines])}
 
         # ── Plain images ──────────────────────────────────────────────────────
-        plain_dir = os.path.join(iter_dir, "plain")
-        os.makedirs(plain_dir, exist_ok=True)
+        if save_pngs:
+            plain_dir = os.path.join(iter_dir, "plain")
+            os.makedirs(plain_dir, exist_ok=True)
         plain_imgs = []
         for elite, xs, ys in outlines:
             cx = (xs.max() + xs.min()) / 2
@@ -393,8 +373,9 @@ class ArchiveVisualizer:
             ax.set_ylim(cy - half_extent, cy + half_extent)
             ax.set_axis_off()
             png_bytes, img_arr = self._render_fig(fig)
-            with open(os.path.join(plain_dir, f"elite_{elite['id']}.png"), "wb") as f:
-                f.write(png_bytes)
+            if save_pngs:
+                with open(os.path.join(plain_dir, f"elite_{elite['id']}.png"), "wb") as f:
+                    f.write(png_bytes)
             plain_imgs.append(img_arr)
             plt.close(fig)
         npz_arrays["plain"] = np.array(plain_imgs)
@@ -421,8 +402,9 @@ class ArchiveVisualizer:
                 v_min, v_max = min(vals.values()), max(vals.values())
                 norm = plt.Normalize(vmin=v_min, vmax=v_max) if v_max > v_min else None
 
-                metric_dir = os.path.join(iter_dir, f"colored_{label}")
-                os.makedirs(metric_dir, exist_ok=True)
+                if save_pngs:
+                    metric_dir = os.path.join(iter_dir, f"colored_{label}")
+                    os.makedirs(metric_dir, exist_ok=True)
                 colored_imgs = []
                 metric_raw_vals = []
 
@@ -442,8 +424,9 @@ class ArchiveVisualizer:
                     ax.set_ylim(cy - half_extent, cy + half_extent)
                     ax.set_axis_off()
                     png_bytes, img_arr = self._render_fig(fig)
-                    with open(os.path.join(metric_dir, f"elite_{elite['id']}.png"), "wb") as f:
-                        f.write(png_bytes)
+                    if save_pngs:
+                        with open(os.path.join(metric_dir, f"elite_{elite['id']}.png"), "wb") as f:
+                            f.write(png_bytes)
                     colored_imgs.append(img_arr)
                     plt.close(fig)
 
