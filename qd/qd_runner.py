@@ -519,8 +519,11 @@ class QDRunner:
                 self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
 
 
-        # Final save
+        # Final save remap and image export after the loop finishes
+        self._remap_archive(self.archive.data()["measures"])
+        self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
         self._save_checkpoint(i)
+
         return self.global_best_score, self.global_best_id, self.stats
     
     def _recalculate_novelty_threshold(self) -> float:
@@ -583,8 +586,7 @@ class QDRunner:
         # space the archive was just remapped into.
         model_path = os.path.join(self.checkpoint_dir, f"finetuned_model_{iteration:04d}.pt")
         finetuned_model.save_pretrained(model_path, parameters=dict(_FT))
-        log.info("Finetuned model saved", path=model_path, iteration=iteration)
-
+        log.info("Finetuned model saved", path=model_path, iteration=iteration)        
         # Overwrite this iteration's checkpoint with the remapped archive so
         # checkpoint and saved model stay consistent on resume.
         self._save_checkpoint(iteration, save_buffer=False, message="Checkpoint updated after retraining")
