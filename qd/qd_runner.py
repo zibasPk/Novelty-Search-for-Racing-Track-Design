@@ -445,7 +445,7 @@ class QDRunner:
 
 
             # Metrics and Visualizations:
-            new_elites_count = len(new_insertions_dicts)   # was: counts["new"]
+            new_elites_count = len(new_insertions_dicts)
             sub_elites_count = len(substitution_dicts)
             batch_best = max(score_list) if score_list else INVALID_SCORE
 
@@ -598,12 +598,13 @@ class QDRunner:
         )
 
     def _finetune_embedding_model(self, elite_phenotype_data: list) -> tuple:
-        """Build a mixed replay dataset and finetune a copy of the embedding model.
+        """Finetune a copy of the embedding model on the current archive elites.
 
         Dataset composition
         -------------------
-        * All valid entries in the evaluation buffer   (broad replay)
-        * Elite entries repeated 2×                    (quality bias)
+        * Every valid (preprocessable, non-``None``) entry in
+          ``elite_phenotype_data`` — the phenotypes of the archive's current
+          elites — included once each.
 
         The first ``FINETUNING_CONFIG["n_frozen_encoder_blocks"]`` encoder
         ResBlocks are frozen so generic low-level patterns from pretraining are
@@ -834,6 +835,7 @@ class QDRunner:
             replacing_data_objectives = data["objective"][is_replacing]
             old_objectives = old_data["objective"][is_replacing]
 
+            # this is needed in this specific pyribs version (0.8) because of a bug in the add(), if ever updated to the newest pyribs version this can be simplified
             if np.any(replacing_data_objectives <= old_objectives):
                 bad_mask = replacing_data_objectives <= old_objectives
                 log.warning("Unexpectedly lower objective in add() call — skipping bad replacements",
