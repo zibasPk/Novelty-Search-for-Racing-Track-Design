@@ -390,6 +390,29 @@ class QDRunner:
         if save_buffer:
             self._evaluation_buffer.save()
 
+    def _print_run_config(self, total_iters, start_iter):
+        """Log the QD algorithm config and the VAE fine-tuning config at the
+        start of a run so each run is reproducible from its log."""
+        algo_config = {
+            "start_iter": start_iter,
+            "total_iters": total_iters,
+            "batch_size": BATCH_SIZE,
+            "random_population_iters": RANDOM_POPULATION_ITERS,
+            "measure_dim": MEASURE_DIM,
+            "ns_knn": NS_KNN,
+            "default_archive_threshold": DEFAULT_ARCHIVE_THRESHOLD,
+            "recalc_threshold_every": RECALC_THRESHOLD_EVERY,
+            "target_archive_size": TARGET_ARCHIVE_SIZE,
+            "k_csc": K_CSC,
+            "checkpoint_every": CHECKPOINT_EVERY,
+            "invalid_score": INVALID_SCORE,
+            "finetune": self.do_finetune,
+            "use_finetuning": self.use_finetuning,
+            "retrain_every": RETRAIN_EVERY,
+        }
+        log.info("Algorithm config", **algo_config)
+        log.info("VAE fine-tuning config", **dict(_FT))
+
     def run(self, total_iters, start_iter=None):
         """Execute the ask → evaluate → tell loop.
 
@@ -397,6 +420,8 @@ class QDRunner:
         """
         if start_iter is None:
             start_iter = self.start_iter
+
+        self._print_run_config(total_iters, start_iter)
 
         for i in range(start_iter, total_iters):
             
@@ -459,47 +484,13 @@ class QDRunner:
                 global_best_id=self.global_best_id,
             )
 
-            data_archive = self.archive.data()
-            arch_scores = data_archive["objective"]
-            valid = arch_scores != INVALID_SCORE
-            mean_val = np.mean(arch_scores[valid]) if np.any(valid) else 0.0
-            best_val = np.max(arch_scores[valid]) if np.any(valid) else 0.0
-            elites = self.archive.stats.num_elites
-            log.info(
-                "Archive stats",
-                size=elites,
-                mean=f"{mean_val:.2f}",
-                best=f"{best_val:.2f}",
+            self._compute_and_record_metrics(
+                i,
+                new_elites_count=new_elites_count,
+                sub_elites_count=sub_elites_count,
+                batch_best=batch_best,
+                num_evaluated=len(sol_dicts),
             )
-
-            # ── Compute metrics ──
-            measures = data_archive["measures"]
-
-            qd_score = qd_stats.compute_qd_score(arch_scores)
-            acceptance_rate = qd_stats.compute_acceptance_rate(new_elites_count, sub_elites_count, len(sol_dicts))
-            mean_pairwise_dist = qd_stats.compute_mean_pairwise_dist(measures, seed=self.seed)
-            high_quality_cov = qd_stats.compute_high_quality_coverage(arch_scores, threshold=10.0)
-            mean_knn_novelty = qd_stats.compute_mean_knn_novelty(measures, k=NS_KNN)
-            fitness_novelty_corr = qd_stats.compute_fitness_novelty_corr(measures, arch_scores, k=NS_KNN)
-
-
-            self.stats.append({
-                "iteration": i,
-                "Archive size": elites,
-                "iteration_best": batch_best,
-                "global_best_score": self.global_best_score,
-                "global_best_id": self.global_best_id,
-                "new_elites": new_elites_count,
-                "substituted_elites": sub_elites_count,
-                "qd_score": qd_score,
-                "acceptance_rate": acceptance_rate,
-                "mean_pairwise_dist": mean_pairwise_dist,
-                "high_quality_coverage": high_quality_cov,
-                "mean_knn_novelty": mean_knn_novelty,
-                "fitness_novelty_corr": fitness_novelty_corr,
-            })
-
-            log.info("Stats updated", iteration=i, stats=self.stats[-1])
 
             self._visualizer.plot_heatmap(i)
             self._visualizer.plot_grid(i, substitution_dicts)
@@ -521,11 +512,61 @@ class QDRunner:
 
         # Final save remap and image export after the loop finishes
         self._remap_archive(self.archive.data()["measures"])
+        self._compute_and_record_metrics(i)
         self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
         self._save_checkpoint(i)
 
         return self.global_best_score, self.global_best_id, self.stats
-    
+
+    def _compute_and_record_metrics(self, iteration, new_elites_count=0,
+                                    sub_elites_count=0, batch_best=INVALID_SCORE,
+                                    num_evaluated=0):
+        """Compute archive diagnostics, append a stats entry, and log it.
+
+        Called once per iteration (with the batch-level counts) and once more
+        after the final remap, where no batch was evaluated so the batch-level
+        arguments default to their empty/neutral values.
+        """
+        data_archive = self.archive.data()
+        arch_scores = data_archive["objective"]
+        measures = data_archive["measures"]
+
+        valid = arch_scores != INVALID_SCORE
+        mean_val = np.mean(arch_scores[valid]) if np.any(valid) else 0.0
+        best_val = np.max(arch_scores[valid]) if np.any(valid) else 0.0
+        elites = self.archive.stats.num_elites
+        log.info(
+            "Archive stats",
+            size=elites,
+            mean=f"{mean_val:.2f}",
+            best=f"{best_val:.2f}",
+        )
+
+        qd_score = qd_stats.compute_qd_score(arch_scores)
+        acceptance_rate = qd_stats.compute_acceptance_rate(new_elites_count, sub_elites_count, num_evaluated)
+        mean_pairwise_dist = qd_stats.compute_mean_pairwise_dist(measures, seed=self.seed)
+        high_quality_cov = qd_stats.compute_high_quality_coverage(arch_scores, threshold=10.0)
+        mean_knn_novelty = qd_stats.compute_mean_knn_novelty(measures, k=NS_KNN)
+        fitness_novelty_corr = qd_stats.compute_fitness_novelty_corr(measures, arch_scores, k=NS_KNN)
+
+        self.stats.append({
+            "iteration": iteration,
+            "Archive size": elites,
+            "iteration_best": batch_best,
+            "global_best_score": self.global_best_score,
+            "global_best_id": self.global_best_id,
+            "new_elites": new_elites_count,
+            "substituted_elites": sub_elites_count,
+            "qd_score": qd_score,
+            "acceptance_rate": acceptance_rate,
+            "mean_pairwise_dist": mean_pairwise_dist,
+            "high_quality_coverage": high_quality_cov,
+            "mean_knn_novelty": mean_knn_novelty,
+            "fitness_novelty_corr": fitness_novelty_corr,
+        })
+
+        log.info("Stats updated", iteration=iteration, stats=self.stats[-1])
+
     def _recalculate_novelty_threshold(self) -> float:
         """multiplicative proportional controller formula from "Unsupervised Behaviour Discovery
         with Quality-Diversity Optimisation" by Luca Grillotti and Antoine Cully 2022"""
