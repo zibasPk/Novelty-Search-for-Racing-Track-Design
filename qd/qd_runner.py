@@ -544,9 +544,7 @@ class QDRunner:
 
         qd_score = qd_stats.compute_qd_score(arch_scores)
         acceptance_rate = qd_stats.compute_acceptance_rate(new_elites_count, sub_elites_count, num_evaluated)
-        mean_pairwise_dist = qd_stats.compute_mean_pairwise_dist(measures, seed=self.seed)
         high_quality_cov = qd_stats.compute_high_quality_coverage(arch_scores, threshold=10.0)
-        mean_knn_novelty = qd_stats.compute_mean_knn_novelty(measures, k=NS_KNN)
         fitness_novelty_corr = qd_stats.compute_fitness_novelty_corr(measures, arch_scores, k=NS_KNN)
 
         self.stats.append({
@@ -555,13 +553,12 @@ class QDRunner:
             "iteration_best": batch_best,
             "global_best_score": self.global_best_score,
             "global_best_id": self.global_best_id,
+            "mean_fitness": float(mean_val),
             "new_elites": new_elites_count,
             "substituted_elites": sub_elites_count,
             "qd_score": qd_score,
             "acceptance_rate": acceptance_rate,
-            "mean_pairwise_dist": mean_pairwise_dist,
             "high_quality_coverage": high_quality_cov,
-            "mean_knn_novelty": mean_knn_novelty,
             "fitness_novelty_corr": fitness_novelty_corr,
         })
 
@@ -615,7 +612,12 @@ class QDRunner:
         elite_ids  = [array_to_solution(sol)["id"] for sol in solutions]
         elite_phenotype = self._evaluation_buffer.get_phenotype_data(elite_ids)
 
-        finetuned_model, embedding_dim = self._finetune_embedding_model(elite_phenotype)
+        finetuned_model, embedding_dim, best_val_recon = self._finetune_embedding_model(elite_phenotype)
+        # Record the reconstruction loss on the latest stats entry (this
+        # iteration's) so it can be plotted against the retraining iterations.
+        if self.stats:
+            self.stats[-1]["recon_loss"] = best_val_recon
+        log.info("Retraining recon loss recorded", iteration=iteration, recon_loss=f"{best_val_recon:.4f}")
         new_measures = self._recompute_measures(finetuned_model, elite_phenotype)
 
         self._remap_archive(new_measures)
@@ -655,6 +657,9 @@ class QDRunner:
         -------
         finetuned_model : MetricsVAE   (eval mode, on the training device)
         embedding_dim   : int
+        best_val_recon  : float
+            Best (lowest) validation reconstruction loss reached during
+            fine-tuning — the early-stopping criterion.
         """
         preprocessor = MetricsPreprocessor()
 
@@ -706,7 +711,8 @@ class QDRunner:
 
         finetuned_model = trainer.model
         finetuned_model.eval()
-        return finetuned_model, finetuned_model.latent_dim
+        best_val_recon = float(trainer.early_stopper.min_validation_loss)
+        return finetuned_model, finetuned_model.latent_dim, best_val_recon
 
     def _recompute_measures(self, model, phenotype_data_list: list) -> np.ndarray:
         """Re-encode a list of phenotype sequences with ``model``.

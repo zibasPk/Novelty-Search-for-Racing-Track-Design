@@ -9,6 +9,7 @@ from qd.config import (
 )
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import os
 import json
@@ -510,11 +511,17 @@ class ArchiveVisualizer:
         Panel ``type`` values
         ---------------------
         ``"line"``        – simple line plot; requires ``key``, ``color``.
+        ``"sparse_line"`` – line+markers over only the iterations that carry a
+                            value (NaN/missing skipped); requires ``key``,
+                            ``color``.  Use for metrics recorded sporadically
+                            (e.g. recon loss, logged only on retraining iters).
         ``"bar"``         – bar chart;         requires ``key``, ``color``.
         ``"multi_line"``  – overlaid lines;    requires ``series`` list of
                             ``{key, label, color, alpha?, linewidth?,
                             clean_invalid?}``.
-        ``"cumulative"``  – cumulative new + substituted elites (no extra keys).
+
+        Panels are laid out two per row, each with its own x-axis labelled in
+        iterations at a granularity of 150.
         """
         stats = self.stats
         if not stats:
@@ -562,9 +569,8 @@ class ArchiveVisualizer:
                 "type": "bar", "key": "substituted_elites", "color": "tab:blue",
             },
             {
-                "title": "Cumulative Elite Insertions",
-                "ylabel": "Cumulative Count",
-                "type": "cumulative",
+                "title": "Mean Archive Fitness", "ylabel": "Mean Fitness",
+                "type": "line", "key": "mean_fitness", "color": "tab:purple",
             },
             {
                 "title": "QD-Score", "ylabel": "QD-Score",
@@ -575,36 +581,32 @@ class ArchiveVisualizer:
                 "type": "line", "key": "acceptance_rate", "color": "tab:orange",
             },
             {
-                "title": "Mean Pairwise Distance",
-                "ylabel": "Mean Distance",
-                "type": "line", "key": "mean_pairwise_dist", "color": "tab:purple",
-            },
-            {
                 "title": "High-Quality Coverage",
                 "ylabel": "Count",
                 "type": "line", "key": "high_quality_coverage", "color": "darkred",
-            },
-            {
-                "title": "Mean k-NN Novelty Score (NS only)",
-                "ylabel": "Mean k-NN Distance",
-                "type": "line", "key": "mean_knn_novelty", "color": "tab:cyan",
             },
             {
                 "title": "Fitness–Novelty Correlation (NS only)",
                 "ylabel": "Pearson r",
                 "type": "line", "key": "fitness_novelty_corr", "color": "tab:pink",
             },
+            {
+                "title": "Reconstruction Loss after Retraining",
+                "ylabel": "Val Recon Loss",
+                "type": "sparse_line", "key": "recon_loss", "color": "tab:cyan",
+            },
         ]
 
         n_panels = len(PANELS)
-        fig, axes = plt.subplots(n_panels, 1,
-                                 figsize=(14, n_panels * 2.5), sharex=True)
-        if n_panels == 1:
-            axes = [axes]
+        n_cols = 2
+        n_rows = (n_panels + n_cols - 1) // n_cols
+        fig, axes = plt.subplots(n_rows, n_cols,
+                                 figsize=(14, n_rows * 3), squeeze=False)
+        axes_flat = axes.flatten()
         fig.suptitle(f"{title} — Run Statistics",
                      fontsize=16, fontweight="bold")
 
-        for ax, p in zip(axes, PANELS):
+        for ax, p in zip(axes_flat, PANELS):
             ptype = p["type"]
 
             if ptype == "line":
@@ -615,6 +617,20 @@ class ArchiveVisualizer:
                 else:
                     ax.plot(iterations, values,
                             color=p["color"], linewidth=1.5)
+
+            elif ptype == "sparse_line":
+                # Plot only the iterations that actually carry a value (e.g.
+                # recon loss, recorded only on retraining iterations).
+                values = get_series(p["key"])
+                pts = [(it, float(v)) for it, v in zip(iterations, values)
+                       if v is not None and not (isinstance(v, float) and np.isnan(v))]
+                if not pts:
+                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                            transform=ax.transAxes, color="gray", fontsize=10)
+                else:
+                    xs, ys = zip(*pts)
+                    ax.plot(xs, ys, color=p["color"], linewidth=1.5,
+                            marker="o", markersize=4)
 
             elif ptype == "bar":
                 values = get_series(p["key"])
@@ -638,24 +654,17 @@ class ArchiveVisualizer:
                             linewidth=s_cfg.get("linewidth", 1.5))
                 ax.legend()
 
-            elif ptype == "cumulative":
-                new_e = get_series("new_elites")
-                sub_e = get_series("substituted_elites")
-                cum_new = np.cumsum(new_e)
-                cum_sub = np.cumsum(sub_e)
-                ax.plot(iterations, cum_new, label="Cumulative New",
-                        color="tab:green", linewidth=1.5)
-                ax.plot(iterations, cum_sub, label="Cumulative Substituted",
-                        color="tab:purple", linewidth=1.5)
-                ax.plot(iterations, cum_new + cum_sub, label="Cumulative Total",
-                        color="tab:blue", linewidth=2, linestyle="--")
-                ax.legend()
-
             ax.set_ylabel(p.get("ylabel", ""))
             ax.set_title(p["title"])
             ax.grid(True, alpha=0.3)
+            # Iteration numbering on the bottom of every panel, every 150 iters.
+            ax.set_xlabel("Iteration")
+            ax.xaxis.set_major_locator(mticker.MultipleLocator(150))
 
-        axes[-1].set_xlabel("Iteration")
+        # Hide any unused axes in the final row.
+        for ax in axes_flat[n_panels:]:
+            ax.set_visible(False)
+
         plt.tight_layout(rect=[0, 0, 1, 0.97])
         plt.show()
 
