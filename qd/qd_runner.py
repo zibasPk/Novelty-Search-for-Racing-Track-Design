@@ -427,7 +427,7 @@ class QDRunner:
             
             do_recalc_threshold = i % RECALC_THRESHOLD_EVERY == 0
             population_iter = i < RANDOM_POPULATION_ITERS
-            do_finetune = self.do_finetune and (i % RETRAIN_EVERY == 0)
+            is_finetune_iter = self.do_finetune and (i % RETRAIN_EVERY == 0)
             
             if not population_iter and do_recalc_threshold and i != start_iter:
                 self._remap_archive(self.archive.data()["measures"])
@@ -491,18 +491,18 @@ class QDRunner:
                 batch_best=batch_best,
                 num_evaluated=len(sol_dicts),
             )
+            if not self.do_finetune:
+                self._visualizer.plot_heatmap(i)
+                self._visualizer.plot_grid(i, substitution_dicts)
 
-            self._visualizer.plot_heatmap(i)
-            self._visualizer.plot_grid(i, substitution_dicts)
-
-            # Save plot_grid in stats
-            self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
+                # Save plot_grid in stats
+                self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
 
             # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
                 self._save_checkpoint(i)
 
-            if not population_iter and do_finetune and (i != start_iter):
+            if not population_iter and is_finetune_iter and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
                 self._save_checkpoint(i)
 
