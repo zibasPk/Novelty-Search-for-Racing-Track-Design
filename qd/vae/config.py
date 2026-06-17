@@ -17,7 +17,7 @@ MODEL_CONFIG = {
     "latent_dim": 32,
 
     # Number of stacked CircularResBlocks in encoder and decoder
-    "n_layers": 4,
+    "n_layers": 5,
 
     # Convolutional kernel size used in every CircularConv1d
     "kernel_size": 7,
