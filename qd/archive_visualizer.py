@@ -6,6 +6,7 @@ from qd.config import (
     BASE_URL,
     INVALID_SCORE,
     PRECOMPILED_EMBEDDINGS_PATH,
+    RETRAIN_EVERY
 )
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
@@ -657,9 +658,9 @@ class ArchiveVisualizer:
             ax.set_ylabel(p.get("ylabel", ""))
             ax.set_title(p["title"])
             ax.grid(True, alpha=0.3)
-            # Iteration numbering on the bottom of every panel, every 150 iters.
+            # Iteration numbering on the bottom of every panel, every RETRAIN_EVERY iterations
             ax.set_xlabel("Iteration")
-            ax.xaxis.set_major_locator(mticker.MultipleLocator(150))
+            ax.xaxis.set_major_locator(mticker.MultipleLocator(RETRAIN_EVERY))
 
         # Hide any unused axes in the final row.
         for ax in axes_flat[n_panels:]:
