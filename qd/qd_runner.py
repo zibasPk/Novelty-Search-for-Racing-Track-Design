@@ -711,7 +711,7 @@ class QDRunner:
         if not finetune_data:
             raise ValueError("No valid phenotype data available for fine-tuning.")
 
-        batch_size = min(_DC["batch_size"], len(valid_elites))
+        batch_size = min(_FT["batch_size"], len(valid_elites))
         log.info("Fine-tuning dataset built", total_samples=len(finetune_data), batch_size=batch_size)
         
         dataset = MetricsDataset(finetune_data)
