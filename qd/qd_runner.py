@@ -226,7 +226,6 @@ class QDRunner:
             archive, self.stats, heatmap_dir, gridplot_dir, images_dir=self.images_dir, seed=seed, grid_state=grid_state)
 
         self._embedding_model = None
-        self.use_finetuning = finetune
         if finetune:
             log.info("Retraining enabled: will finetune evaluator on elites every "
                      f"{RETRAIN_EVERY} iterations and recalculate measures for all archived elites.")
@@ -234,7 +233,6 @@ class QDRunner:
                 client, cluster, evaluator_future, self._embedding_model = self.setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
             else:
                 log.info("No pretrained model path provided for retraining mode; initializing new model and scattering to Dask workers.")
-                self.use_finetuning = False
                 self._embedding_model = MetricsVAE()
                 client, cluster, evaluator_future, _ = self.setup_dask(batch_size=BATCH_SIZE, model=self._embedding_model, embedding_dim=MEASURE_DIM)
         else:
@@ -407,7 +405,6 @@ class QDRunner:
             "checkpoint_every": CHECKPOINT_EVERY,
             "invalid_score": INVALID_SCORE,
             "finetune": self.do_finetune,
-            "use_finetuning": self.use_finetuning,
             "retrain_every": RETRAIN_EVERY,
         }
         log.info("Algorithm config", **algo_config)
@@ -427,7 +424,15 @@ class QDRunner:
             
             do_recalc_threshold = i % RECALC_THRESHOLD_EVERY == 0
             population_iter = i < RANDOM_POPULATION_ITERS
-            is_finetune_iter = self.do_finetune and (i % RETRAIN_EVERY == 0)
+         
+            # iterations counted from the end of the random-population warmup;
+            # > 0 means we are past warmup (and not on the very first post-warmup iter)
+            finetune_iter_index = i - RANDOM_POPULATION_ITERS
+            is_finetune_iter = (
+                self.do_finetune
+                and finetune_iter_index > 0
+                and finetune_iter_index % RETRAIN_EVERY == 0
+            )
             
             if not population_iter and do_recalc_threshold and i != start_iter:
                 self._remap_archive(self.archive.data()["measures"])
@@ -502,7 +507,7 @@ class QDRunner:
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
                 self._save_checkpoint(i)
 
-            if not population_iter and is_finetune_iter and (i != start_iter):
+            if is_finetune_iter and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
                 self._save_checkpoint(i)
 
