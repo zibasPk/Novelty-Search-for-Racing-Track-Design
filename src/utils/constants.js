@@ -14,6 +14,7 @@ export const UTILS_DIR = './src/utils/';
 export const LOG_DIR = './logs/';
 
 export const JSON_DEBUG = false;
+export const XML_DEBUG = false;
 export const SIMULATION_TIMEOUT = 60000;
 
 export const DEFAULT_TRACK_SCALE = 2.0;

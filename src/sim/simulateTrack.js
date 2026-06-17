@@ -13,7 +13,7 @@ import {
   SIMULATION_TIMEOUT,
   TARGET_RACE_DURATION,
   DEFAULT_REPETITIONS,
-  OUTPUT_DIR_XML
+  XML_DEBUG
 } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
 import log from "loglevel";
@@ -64,7 +64,7 @@ export async function simulate(
 
   // translate to XML for TORCS
   const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
-  const trackXml = xmlGenerator.generateXML(0, true);
+  const trackXml = xmlGenerator.generateXML(0, XML_DEBUG);
   log.info(`SEED: ${seed}`);
   log.info(`MODE: ${mode}`);
   log.info(`trackSize: ${trackSize}`);
