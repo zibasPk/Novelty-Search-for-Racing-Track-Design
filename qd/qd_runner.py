@@ -367,6 +367,27 @@ class QDRunner:
         else:
             raise ValueError("Either model or model_path must be provided for Dask setup.")
 
+    def teardown_dask(self):
+        """Gracefully release the scattered evaluator and shut down the cluster.
+
+        Cancelling the broadcast future first prevents the scheduler from logging
+        ``lost scattered data, which can't be recovered`` when the workers are
+        removed during shutdown.
+        """
+        try:
+            if getattr(self, "evaluator_future", None) is not None:
+                self.evaluator_future.cancel()
+        except Exception:
+            log.debug("Failed to cancel evaluator_future during teardown", exc_info=True)
+        finally:
+            self.evaluator_future = None
+        if getattr(self, "client", None) is not None:
+            self.client.close()
+            self.client = None
+        if getattr(self, "cluster", None) is not None:
+            self.cluster.close()
+            self.cluster = None
+
     @property
     def visualizer(self):
         """Access the ``ArchiveVisualizer`` for post-run plots and export."""
@@ -521,6 +542,10 @@ class QDRunner:
         self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
         self._save_checkpoint(i)
 
+        # Gracefully shut down the Dask cluster so the scheduler doesn't log a
+        # "lost scattered data" error when the process exits.
+        self.teardown_dask()
+
         return self.global_best_score, self.global_best_id, self.stats
 
     def _compute_and_record_metrics(self, iteration, new_elites_count=0,
@@ -639,8 +664,7 @@ class QDRunner:
         # checkpoint and saved model stay consistent on resume.
         self._save_checkpoint(iteration, save_buffer=False, message="Checkpoint updated after retraining")
 
-        self.client.close()
-        self.cluster.close()
+        self.teardown_dask()
         self.client, self.cluster, self.evaluator_future, _ = self.setup_dask(
             model=finetuned_model, embedding_dim=embedding_dim
         )
