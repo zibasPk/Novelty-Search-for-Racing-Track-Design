@@ -393,10 +393,16 @@ class QDRunner:
         """Access the ``ArchiveVisualizer`` for post-run plots and export."""
         return self._visualizer
 
-    def _save_checkpoint(self, iteration, save_buffer=True, message="Checkpoint saved"):
+    def _save_checkpoint(self, iteration, save_buffer=True, message="Checkpoint saved", prefix="checkpoint"):
         """Pickle the run state (scheduler, seed, iteration, stats) and
-        optionally flush the evaluation buffer."""
-        ckpt_name = os.path.join(self.checkpoint_dir, f"checkpoint_{iteration:04d}.pkl")
+        optionally flush the evaluation buffer.
+
+        ``prefix`` controls the filename stem.  The default ``"checkpoint"`` is
+        the only one ``get_state_from_checkpoint`` discovers (it globs
+        ``checkpoint_*.pkl``); pass a different prefix to archive a state without
+        it being picked up as the latest resumable checkpoint.
+        """
+        ckpt_name = os.path.join(self.checkpoint_dir, f"{prefix}_{iteration:04d}.pkl")
         with open(ckpt_name, "wb") as f:
             pickle.dump({
                 "scheduler": self.scheduler,
@@ -530,7 +536,11 @@ class QDRunner:
 
             if is_finetune_iter and (i != start_iter):
                 log.info("Retraining evaluator on current buffer elites and recalculating measures for all archived elites")
-                self._save_checkpoint(i)
+                # Preserve the pre-finetune archive under a distinct prefix so it
+                # is NOT matched by get_state_from_checkpoint's "checkpoint_*.pkl"
+                # glob. _start_retraining_routine then writes the post-finetune
+                # state under the resumable "checkpoint" name.
+                self._save_checkpoint(i, prefix="pre_finetune_checkpoint")
 
                 self._start_retraining_routine(i)
                 self._visualizer.save_elite_images(i, evaluation_buffer=self._evaluation_buffer)
