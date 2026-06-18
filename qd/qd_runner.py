@@ -734,6 +734,12 @@ class QDRunner:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_copy = copy.deepcopy(self._embedding_model)
 
+        # Reconstruction-loss channel weights must match pretraining; build the
+        # tensor on the training device since vae_loss does not move it.
+        dim_weights = _FT.get("dim_weights")
+        if dim_weights is not None:
+            dim_weights = torch.tensor(dim_weights, dtype=torch.float32, device=device)
+
         ft_config = TrainingConfig(
             finetune=True,
             lr=_FT["lr"],
@@ -743,6 +749,7 @@ class QDRunner:
             n_cycles=_FT["kld"]["n_cycles"],
             max_beta=_FT["kld"]["max_beta"],
             ratio=_FT["kld"]["ratio"],
+            dim_weights=dim_weights,
         )
 
         trainer = VAETrainer(model_copy, ft_config, device)
