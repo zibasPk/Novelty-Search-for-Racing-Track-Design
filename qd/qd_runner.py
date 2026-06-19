@@ -652,11 +652,16 @@ class QDRunner:
         elite_ids  = [array_to_solution(sol)["id"] for sol in solutions]
         elite_phenotype = self._evaluation_buffer.get_phenotype_data(elite_ids)
 
-        finetuned_model, embedding_dim, best_val_recon = self._finetune_embedding_model(elite_phenotype)
+        finetuned_model, embedding_dim, best_val_recon, val_loss_curve, val_kld_curve = self._finetune_embedding_model(elite_phenotype)
         # Record the reconstruction loss on the latest stats entry (this
         # iteration's) so it can be plotted against the retraining iterations.
+        # Also store the full per-epoch validation curves (saved epochs only) so
+        # the whole fine-tuning history can be plotted as one continuous graph
+        # across every retraining cycle.
         if self.stats:
             self.stats[-1]["recon_loss"] = best_val_recon
+            self.stats[-1]["finetune_val_loss"] = val_loss_curve
+            self.stats[-1]["finetune_val_kld"] = val_kld_curve
         log.info("Retraining recon loss recorded", iteration=iteration, recon_loss=f"{best_val_recon:.4f}")
         new_measures = self._recompute_measures(finetuned_model, elite_phenotype)
 
@@ -699,6 +704,13 @@ class QDRunner:
         best_val_recon  : float
             Best (lowest) validation reconstruction loss reached during
             fine-tuning — the early-stopping criterion.
+        val_loss_curve  : list[float]
+            Per-epoch validation reconstruction loss up to and including the
+            saved (best) epoch.  The extra early-stopping patience epochs that
+            followed the best epoch are excluded, since the checkpointed model
+            is the one from the best epoch.
+        val_kld_curve   : list[float]
+            Per-epoch validation KLD loss over the same saved-epoch range.
         """
         preprocessor = MetricsPreprocessor()
 
@@ -753,12 +765,19 @@ class QDRunner:
         )
 
         trainer = VAETrainer(model_copy, ft_config, device)
-        trainer.fit(train_loader, val_loader)
+        history = trainer.fit(train_loader, val_loader)
 
         finetuned_model = trainer.model
         finetuned_model.eval()
         best_val_recon = float(trainer.early_stopper.min_validation_loss)
-        return finetuned_model, finetuned_model.latent_dim, best_val_recon
+
+        # Keep only the epochs up to and including the saved (best) epoch; the
+        # trailing patience epochs that did not improve the model are dropped.
+        best_epoch = trainer.early_stopper.best_model_epoch
+        val_loss_curve = [float(v) for v in history["val_recon_loss"][:best_epoch + 1]]
+        val_kld_curve = [float(v) for v in history["val_kld_loss"][:best_epoch + 1]]
+
+        return finetuned_model, finetuned_model.latent_dim, best_val_recon, val_loss_curve, val_kld_curve
 
     def _recompute_measures(self, model, phenotype_data_list: list) -> np.ndarray:
         """Re-encode a list of phenotype sequences with ``model``.

@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import os
+import re
 import json
 import datetime
 from io import BytesIO
@@ -607,7 +608,9 @@ class ArchiveVisualizer:
         fig.suptitle(f"{title} — Run Statistics",
                      fontsize=16, fontweight="bold")
 
-        for ax, p in zip(axes_flat, PANELS):
+        def render_panel(ax, p):
+            """Draw a single panel ``p`` onto ``ax``. Shared by the combined
+            grid and the per-panel standalone PNGs so both stay in sync."""
             ptype = p["type"]
 
             if ptype == "line":
@@ -662,6 +665,9 @@ class ArchiveVisualizer:
             ax.set_xlabel("Iteration")
             ax.xaxis.set_major_locator(mticker.MultipleLocator(RETRAIN_EVERY))
 
+        for ax, p in zip(axes_flat, PANELS):
+            render_panel(ax, p)
+
         # Hide any unused axes in the final row.
         for ax in axes_flat[n_panels:]:
             ax.set_visible(False)
@@ -673,6 +679,18 @@ class ArchiveVisualizer:
         if stats_dir:
             os.makedirs(stats_dir, exist_ok=True)
             fig.savefig(os.path.join(stats_dir, "run_stats.png"), dpi=200)
+
+            # Also save each panel as its own standalone PNG so individual
+            # metrics can be inspected without the surrounding grid.
+            panels_dir = os.path.join(stats_dir, "run_stats_panels")
+            os.makedirs(panels_dir, exist_ok=True)
+            for p in PANELS:
+                p_fig, p_ax = plt.subplots(figsize=(7, 4))
+                render_panel(p_ax, p)
+                slug = re.sub(r"[^a-z0-9]+", "_", p["title"].lower()).strip("_")
+                p_fig.tight_layout()
+                p_fig.savefig(os.path.join(panels_dir, f"{slug}.png"), dpi=200)
+                plt.close(p_fig)
         plt.close(fig)
 
         # ── Summary printout ─────────────────────────────────────────────────
@@ -690,6 +708,103 @@ class ArchiveVisualizer:
             total_substituted=sum(sub_elites),
             avg_new_per_iter=f"{np.mean(new_elites):.2f}",
             avg_sub_per_iter=f"{np.mean(sub_elites):.2f}",
+        )
+
+    # -- fine-tuning loss plots -----------------------------------------------
+
+    def _plot_finetuning_curve(self, stats_key, ylabel, title, filename, stats_dir=None):
+        """Plot a per-epoch validation curve across every fine-tuning cycle as
+        one continuous line.
+
+        ``stats_key`` selects which per-epoch curve to read from each stats
+        entry (e.g. ``"finetune_val_loss"`` or ``"finetune_val_kld"``).
+
+        Each fine-tuning contributes only the epochs up to and including its
+        saved (best) epoch — the trailing early-stopping patience epochs that
+        did not improve the model are excluded, since the checkpointed model is
+        the one from the best epoch.
+
+        Segments are laid back-to-back on a shared "cumulative fine-tuning
+        epoch" x-axis, coloured per cycle, separated by dashed vertical lines,
+        and labelled with the QD iteration at which each fine-tuning happened.
+        The saved (best) epoch ending each segment is marked with a ringed dot.
+        """
+        segments = [
+            (s["iteration"], s[stats_key])
+            for s in self.stats
+            if s.get(stats_key)
+        ]
+        if not segments:
+            log.info("No fine-tuning curves to plot", stats_key=stats_key)
+            return
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+        cmap = plt.get_cmap("tab10")
+        x_offset = 0
+
+        for seg_idx, (iteration, curve) in enumerate(segments):
+            xs = np.arange(x_offset, x_offset + len(curve))
+            color = cmap(seg_idx % 10)
+
+            ax.plot(xs, curve, color=color, linewidth=1.5,
+                    marker="o", markersize=3)
+            # Mark the saved (best) epoch — the last point of the segment.
+            ax.scatter(xs[-1], curve[-1], color=color, s=45, zorder=3,
+                       edgecolor="black", linewidths=0.7)
+
+            # Dashed separator between consecutive fine-tunings.
+            if seg_idx > 0:
+                ax.axvline(x_offset - 0.5, color="gray", linestyle="--",
+                           linewidth=0.8, alpha=0.6)
+
+            # Iteration label pinned to the top of the segment (x in data
+            # coords, y in axes fraction).
+            ax.text(x_offset, 1.01, f"it {iteration}",
+                    transform=ax.get_xaxis_transform(),
+                    ha="left", va="bottom", fontsize=8, color=color, rotation=0)
+
+            x_offset += len(curve)
+
+        ax.set_xlabel("Cumulative fine-tuning epoch (saved epochs only)")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+        if stats_dir:
+            os.makedirs(stats_dir, exist_ok=True)
+            fig.savefig(os.path.join(stats_dir, filename), dpi=200)
+        plt.close(fig)
+
+        log.info(
+            "Fine-tuning curve plot rendered",
+            stats_key=stats_key,
+            cycles=len(segments),
+            total_saved_epochs=sum(len(c) for _, c in segments),
+        )
+
+    def plot_finetuning_val_loss(self, title="Fine-tuning Validation Loss", stats_dir=None):
+        """Continuous per-epoch validation reconstruction loss across all
+        fine-tuning cycles (saved epochs only). See ``_plot_finetuning_curve``."""
+        self._plot_finetuning_curve(
+            stats_key="finetune_val_loss",
+            ylabel="Validation Recon Loss",
+            title=title,
+            filename="finetuning_val_loss.png",
+            stats_dir=stats_dir,
+        )
+
+    def plot_finetuning_val_kld(self, title="Fine-tuning Validation KLD", stats_dir=None):
+        """Continuous per-epoch validation KLD loss across all fine-tuning
+        cycles (saved epochs only). See ``_plot_finetuning_curve``."""
+        self._plot_finetuning_curve(
+            stats_key="finetune_val_kld",
+            ylabel="Validation KLD Loss",
+            title=title,
+            filename="finetuning_val_kld.png",
+            stats_dir=stats_dir,
         )
 
     # -- elite export ---------------------------------------------------------

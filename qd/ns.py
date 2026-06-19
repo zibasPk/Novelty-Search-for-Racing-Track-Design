@@ -171,6 +171,8 @@ if __name__ == '__main__':
     )
 
     runner.visualizer.plot_stats(title="Novelty Search", stats_dir=NS_DIR)
+    runner.visualizer.plot_finetuning_val_loss(title="Novelty Search — Fine-tuning Validation Loss", stats_dir=NS_DIR)
+    runner.visualizer.plot_finetuning_val_kld(title="Novelty Search — Fine-tuning Validation KLD", stats_dir=NS_DIR)
 
     runner.visualizer.export_elites(
         output_path=ELITES_OUTPUT,
