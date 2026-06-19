@@ -754,7 +754,7 @@ class ArchiveVisualizer:
 
             # Dashed separator between consecutive fine-tunings.
             if seg_idx > 0:
-                ax.axvline(x_offset - 0.5, color="gray", linestyle="--",
+                ax.axvline(x_offset - 0.5, color="Fgray", linestyle="--",
                            linewidth=0.8, alpha=0.6)
 
             # Iteration label pinned to the top of the segment (x in data
@@ -785,7 +785,7 @@ class ArchiveVisualizer:
             total_saved_epochs=sum(len(c) for _, c in segments),
         )
 
-    def plot_finetuning_val_loss(self, title="Fine-tuning Validation Loss", stats_dir=None):
+    def plot_finetuning_val_loss(self, title="", stats_dir=None):
         """Continuous per-epoch validation reconstruction loss across all
         fine-tuning cycles (saved epochs only). See ``_plot_finetuning_curve``."""
         self._plot_finetuning_curve(
@@ -796,7 +796,7 @@ class ArchiveVisualizer:
             stats_dir=stats_dir,
         )
 
-    def plot_finetuning_val_kld(self, title="Fine-tuning Validation KLD", stats_dir=None):
+    def plot_finetuning_val_kld(self, title="", stats_dir=None):
         """Continuous per-epoch validation KLD loss across all fine-tuning
         cycles (saved epochs only). See ``_plot_finetuning_curve``."""
         self._plot_finetuning_curve(
