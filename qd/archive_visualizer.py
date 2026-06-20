@@ -712,7 +712,7 @@ class ArchiveVisualizer:
 
     # -- fine-tuning loss plots -----------------------------------------------
 
-    def _plot_finetuning_curve(self, stats_key, ylabel, title, filename, stats_dir=None):
+    def _plot_finetuning_curve(self, stats_key, ylabel, filename, stats_dir=None):
         """Plot a per-epoch validation curve across every fine-tuning cycle as
         one continuous line.
 
@@ -767,7 +767,6 @@ class ArchiveVisualizer:
 
         ax.set_xlabel("Cumulative fine-tuning epoch (saved epochs only)")
         ax.set_ylabel(ylabel)
-        ax.set_title(title)
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -785,24 +784,22 @@ class ArchiveVisualizer:
             total_saved_epochs=sum(len(c) for _, c in segments),
         )
 
-    def plot_finetuning_val_loss(self, title="", stats_dir=None):
+    def plot_finetuning_val_loss(self, stats_dir=None):
         """Continuous per-epoch validation reconstruction loss across all
         fine-tuning cycles (saved epochs only). See ``_plot_finetuning_curve``."""
         self._plot_finetuning_curve(
             stats_key="finetune_val_loss",
             ylabel="Validation Recon Loss",
-            title=title,
             filename="finetuning_val_loss.png",
             stats_dir=stats_dir,
         )
 
-    def plot_finetuning_val_kld(self, title="", stats_dir=None):
+    def plot_finetuning_val_kld(self, stats_dir=None):
         """Continuous per-epoch validation KLD loss across all fine-tuning
         cycles (saved epochs only). See ``_plot_finetuning_curve``."""
         self._plot_finetuning_curve(
             stats_key="finetune_val_kld",
             ylabel="Validation KLD Loss",
-            title=title,
             filename="finetuning_val_kld.png",
             stats_dir=stats_dir,
         )
