@@ -754,7 +754,7 @@ class ArchiveVisualizer:
 
             # Dashed separator between consecutive fine-tunings.
             if seg_idx > 0:
-                ax.axvline(x_offset - 0.5, color="Fgray", linestyle="--",
+                ax.axvline(x_offset - 0.5, color="gray", linestyle="--",
                            linewidth=0.8, alpha=0.6)
 
             # Iteration label pinned to the top of the segment (x in data
