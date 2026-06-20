@@ -591,7 +591,6 @@ class QDRunner:
             best=f"{best_val:.2f}",
         )
 
-        qd_score = qd_stats.compute_qd_score(arch_scores)
         acceptance_rate = qd_stats.compute_acceptance_rate(new_elites_count, sub_elites_count, num_evaluated)
         high_quality_cov = qd_stats.compute_high_quality_coverage(arch_scores, threshold=10.0)
         fitness_novelty_corr = qd_stats.compute_fitness_novelty_corr(measures, arch_scores, k=NS_KNN)
@@ -605,7 +604,6 @@ class QDRunner:
             "mean_fitness": float(mean_val),
             "new_elites": new_elites_count,
             "substituted_elites": sub_elites_count,
-            "qd_score": qd_score,
             "acceptance_rate": acceptance_rate,
             "high_quality_coverage": high_quality_cov,
             "fitness_novelty_corr": fitness_novelty_corr,

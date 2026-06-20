@@ -556,10 +556,8 @@ class ArchiveVisualizer:
                 "type": "multi_line",
                 "series": [
                     {"key": "iteration_best",   "label": "Iteration Best",
-                     "color": "tab:orange", "alpha": 0.6, "linewidth": 1,
+                     "color": "tab:orange", "alpha": 0.45, "linewidth": 1,
                      "clean_invalid": True},
-                    {"key": "global_best_score", "label": "Global Best",
-                     "color": "tab:red", "linewidth": 2},
                 ],
             },
             {
@@ -573,10 +571,6 @@ class ArchiveVisualizer:
             {
                 "title": "Mean Archive Fitness", "ylabel": "Mean Fitness",
                 "type": "line", "key": "mean_fitness", "color": "tab:purple",
-            },
-            {
-                "title": "QD-Score", "ylabel": "QD-Score",
-                "type": "line", "key": "qd_score", "color": "tab:green",
             },
             {
                 "title": "Archive Acceptance Rate", "ylabel": "Acceptance Rate",

@@ -8,12 +8,6 @@ from sklearn.neighbors import NearestNeighbors
 from qd.config import INVALID_SCORE
 
 
-def compute_qd_score(objective_scores: np.ndarray) -> float:
-    """Sum of all valid elite fitnesses (QD-Score)."""
-    valid = objective_scores[(objective_scores != INVALID_SCORE) & np.isfinite(objective_scores)]
-    return float(np.sum(valid)) if len(valid) > 0 else 0.0
-
-
 def compute_acceptance_rate(new_count: int, sub_count: int, batch_size: int) -> float:
     """Fraction of evaluated candidates accepted (new or improved) into the archive."""
     return (new_count + sub_count) / batch_size if batch_size > 0 else 0.0
