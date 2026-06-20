@@ -447,6 +447,15 @@ class QDRunner:
 
         self._print_run_config(total_iters, start_iter)
 
+        if start_iter >= total_iters:
+            log.info(
+                "Nothing to resume: start_iter is at or beyond total_iters",
+                start_iter=start_iter,
+                total_iters=total_iters,
+            )
+            self.teardown_dask()
+            return self.global_best_score, self.global_best_id, self.stats
+
         for i in range(start_iter, total_iters):
             
             do_recalc_threshold = i % RECALC_THRESHOLD_EVERY == 0
