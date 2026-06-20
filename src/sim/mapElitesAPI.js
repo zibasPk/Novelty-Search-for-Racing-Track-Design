@@ -78,7 +78,7 @@ app.post('/generate', async (req, res) => {
 
 app.post('/genforweb', async (req, res) => {
   try {
-    const { id, mode, trackSize , perlin_parameters, rngMode} = req.body;
+    const { id, mode, trackSize , perlin_parameters, rngMode, canonicalize = true} = req.body;
     const missing = requireFields(req.body, ['id', 'mode', 'trackSize',  'rngMode']);
     if (missing) {
       return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
@@ -91,7 +91,8 @@ app.post('/genforweb', async (req, res) => {
       trackSize,
       saveJSON: false,
       rngMode: rngMode,
-      perlin_parameters
+      perlin_parameters,
+      canonicalize
     });
 
     const response = {
@@ -115,7 +116,7 @@ app.post('/genforweb', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/reconstruct', async (req, res) => {
   try {
-    const { mode, seed, dataSet, selectedCells, trackSize } = req.body;
+    const { mode, seed, dataSet, selectedCells, trackSize, canonicalize = true } = req.body;
     const missing = requireFields(req.body, ['mode', 'dataSet','selectedCells']);
     if (missing) {
       return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
@@ -132,7 +133,8 @@ app.post('/reconstruct', async (req, res) => {
         trackSize,
         saveJSON: false,
         dataSet,
-        selected: sel
+        selected: sel,
+        canonicalize
       }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Track generation timed out')), timeout))

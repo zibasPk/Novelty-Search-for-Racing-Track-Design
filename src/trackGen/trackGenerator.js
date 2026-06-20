@@ -14,7 +14,7 @@ async function importJsonUtils() {
 	}
 }
 
-export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode, perlin_parameters = null } = {}) {
+export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JSON_DEBUG, dataSet = [], selected = [], rngMode, perlin_parameters = null, canonicalize = true } = {}) {
 	let trackGenerator;
 
 	if (saveJSON) await importJsonUtils();
@@ -33,8 +33,10 @@ export async function generateTrack({ mode, bbox, seed, trackSize, saveJSON = JS
 
 	let splineTrack = spline.splineSmoothing(trackGenerator.trackEdges);
 
-	// Canonicalize winding order and start point (see utils.canonicalizeTrack)
-	splineTrack = utils.canonicalizeTrack(splineTrack);
+	// Canonicalize winding order and start point 
+	if (canonicalize) {
+		splineTrack = utils.canonicalizeTrack(splineTrack);
+	}
 
 	// check if a track has a self-intersection, if so throw an error
 	if (utils.hasSelfIntersection(splineTrack)) {
