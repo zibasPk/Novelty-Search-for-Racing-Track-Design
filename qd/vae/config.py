@@ -88,7 +88,7 @@ TRAINING_CONFIG = {
 
 FINETUNING_CONFIG = {
     # Adam learning rate for the unfrozen encoder layers (deep blocks + fc_mu/fc_var).
-    "lr": 1e-4,
+    "lr": 5e-4,
 
     # Adam learning rate for the decoder.
     # Set to a value lower than `lr` to let the decoder track the encoder's
@@ -97,7 +97,7 @@ FINETUNING_CONFIG = {
     "decoder_lr": 0.0,
 
     # Maximum number of fine-tuning epochs (early stopping usually kicks in sooner)
-    "epochs": 90,
+    "epochs": 50,
 
     # Early-stopping patience during fine-tuning
     "patience": 20,
@@ -106,6 +106,8 @@ FINETUNING_CONFIG = {
     # elite set, so a smaller batch than pretraining (DATA_CONFIG["batch_size"])
     # gives more gradient updates per epoch. Capped at the number of elites.
     "batch_size": 32,
+    
+    "dim_weights": [0.25417647, 2.6773722, 0.06845125],
 
     # Number of encoder CircularResBlocks to freeze (counting from block 0,
     # i.e. the lowest-dilation blocks that learn generic local patterns).
