@@ -60,7 +60,8 @@ if __name__ == '__main__':
         NS_KNN,
         EMBEDDING_MODEL_PATH,
         PRECOMPILED_EMBEDDINGS_PATH,
-        DEFAULT_ARCHIVE_THRESHOLD
+        DEFAULT_ARCHIVE_THRESHOLD,
+        DO_FINETUNE,
     )
 
     # --- Novelty Search specific config ---
@@ -127,7 +128,7 @@ if __name__ == '__main__':
             gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
             seed=SEED,
-            do_retraining=True,
+            do_retraining=DO_FINETUNE,
         )
     else:
         archive = ProximityArchive(
@@ -156,7 +157,7 @@ if __name__ == '__main__':
             heatmap_dir=heatmap_dir,
             gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
-            finetune=True,
+            finetune=DO_FINETUNE,
             seed=SEED,
         )
 
