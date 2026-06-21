@@ -230,19 +230,81 @@ class QDRunner:
             log.info("Retraining enabled: will finetune evaluator on elites every "
                      f"{RETRAIN_EVERY} iterations and recalculate measures for all archived elites.")
             if pretrained_model_path is not None:
-                client, cluster, evaluator_future, self._embedding_model = self.setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
+                client, cluster, evaluator_future, self._embedding_model = self._setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
             else:
                 log.info("No pretrained model path provided for retraining mode; initializing new model and scattering to Dask workers.")
                 self._embedding_model = MetricsVAE()
-                client, cluster, evaluator_future, _ = self.setup_dask(batch_size=BATCH_SIZE, model=self._embedding_model, embedding_dim=MEASURE_DIM)
+                client, cluster, evaluator_future, _ = self._setup_dask(batch_size=BATCH_SIZE, model=self._embedding_model, embedding_dim=MEASURE_DIM)
         else:
             log.info("Retraining disabled: using fixed evaluator for entire run.")
-            client, cluster, evaluator_future, self._embedding_model = self.setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
+            client, cluster, evaluator_future, self._embedding_model = self._setup_dask(batch_size=BATCH_SIZE, model_path=pretrained_model_path)
 
         self.client = client
         self.cluster = cluster
         self.evaluator_future = evaluator_future
 
+    def _setup_dask(self, batch_size=BATCH_SIZE, model = None, embedding_dim = None, model_path=None):
+        """Create a Dask LocalCluster and scatter the evaluator to all workers.
+
+        Takes either a pre-instantiated model and embedding_dim or a path to a pretrained model checkpoint.
+
+        Returns ``(client, cluster, evaluator_future)``.
+        """
+        # dask.config.set({"distributed.worker.multiprocessing-method": "fork"})
+
+        if model_path is not None:
+            log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
+            cluster = LocalCluster(
+                processes=True, n_workers=batch_size, threads_per_worker=1)
+            client = Client(cluster)
+            log.debug("Dask cluster ready", dashboard=client.dashboard_link)
+
+            evaluator, model = EvaluatorMetrics.load_pretrained(model_path)
+            evaluator_future = client.scatter(evaluator, broadcast=True)
+            log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
+
+            return client, cluster, evaluator_future, model
+
+        elif model is not None:
+            log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
+            cluster = LocalCluster(
+                processes=True, n_workers=batch_size, threads_per_worker=1)
+            client = Client(cluster)
+            log.debug("Dask cluster ready", dashboard=client.dashboard_link)
+
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            evaluator = EvaluatorMetrics(model, embedding_dim, device)
+
+            evaluator_future = client.scatter(evaluator, broadcast=True)
+
+            log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
+            return client, cluster, evaluator_future, model
+
+        else:
+            raise ValueError("Either model or model_path must be provided for Dask setup.")
+
+    def _teardown_dask(self):
+        """Gracefully release the scattered evaluator and shut down the cluster.
+
+        Cancelling the broadcast future first prevents the scheduler from logging
+        ``lost scattered data, which can't be recovered`` when the workers are
+        removed during shutdown.
+        """
+        try:
+            if getattr(self, "evaluator_future", None) is not None:
+                self.evaluator_future.cancel()
+        except Exception:
+            log.debug("Failed to cancel evaluator_future during teardown", exc_info=True)
+        finally:
+            self.evaluator_future = None
+        if getattr(self, "client", None) is not None:
+            self.client.close()
+            self.client = None
+        if getattr(self, "cluster", None) is not None:
+            self.cluster.close()
+            self.cluster = None
+
+    
     @staticmethod
     def _latest_finetuned_model(checkpoint_dir, max_iteration=None):
         """Return the path of the most recent ``finetuned_model_*.pt`` saved at
@@ -327,66 +389,7 @@ class QDRunner:
             "seed": seed
         }
 
-    def setup_dask(self, batch_size=BATCH_SIZE, model = None, embedding_dim = None, model_path=None):
-        """Create a Dask LocalCluster and scatter the evaluator to all workers.
 
-        Takes either a pre-instantiated model and embedding_dim or a path to a pretrained model checkpoint.
-
-        Returns ``(client, cluster, evaluator_future)``.
-        """
-        # dask.config.set({"distributed.worker.multiprocessing-method": "fork"})
-
-        if model_path is not None:
-            log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
-            cluster = LocalCluster(
-                processes=True, n_workers=batch_size, threads_per_worker=1)
-            client = Client(cluster)
-            log.debug("Dask cluster ready", dashboard=client.dashboard_link)
-
-            evaluator, model = EvaluatorMetrics.load_pretrained(model_path)
-            evaluator_future = client.scatter(evaluator, broadcast=True)
-            log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
-
-            return client, cluster, evaluator_future, model
-
-        elif model is not None:
-            log.debug("Setting up Dask LocalCluster", n_workers=batch_size)
-            cluster = LocalCluster(
-                processes=True, n_workers=batch_size, threads_per_worker=1)
-            client = Client(cluster)
-            log.debug("Dask cluster ready", dashboard=client.dashboard_link)
-
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            evaluator = EvaluatorMetrics(model, embedding_dim, device)
-
-            evaluator_future = client.scatter(evaluator, broadcast=True)
-
-            log.debug("Evaluator scattered to Dask workers", n_workers=batch_size)
-            return client, cluster, evaluator_future, model
-
-        else:
-            raise ValueError("Either model or model_path must be provided for Dask setup.")
-
-    def teardown_dask(self):
-        """Gracefully release the scattered evaluator and shut down the cluster.
-
-        Cancelling the broadcast future first prevents the scheduler from logging
-        ``lost scattered data, which can't be recovered`` when the workers are
-        removed during shutdown.
-        """
-        try:
-            if getattr(self, "evaluator_future", None) is not None:
-                self.evaluator_future.cancel()
-        except Exception:
-            log.debug("Failed to cancel evaluator_future during teardown", exc_info=True)
-        finally:
-            self.evaluator_future = None
-        if getattr(self, "client", None) is not None:
-            self.client.close()
-            self.client = None
-        if getattr(self, "cluster", None) is not None:
-            self.cluster.close()
-            self.cluster = None
 
     @property
     def visualizer(self):
@@ -453,7 +456,7 @@ class QDRunner:
                 start_iter=start_iter,
                 total_iters=total_iters,
             )
-            self.teardown_dask()
+            self._teardown_dask()
             return self.global_best_score, self.global_best_id, self.stats
 
         for i in range(start_iter, total_iters):
@@ -563,7 +566,7 @@ class QDRunner:
 
         # Gracefully shut down the Dask cluster so the scheduler doesn't log a
         # "lost scattered data" error when the process exits.
-        self.teardown_dask()
+        self._teardown_dask()
 
         return self.global_best_score, self.global_best_id, self.stats
 
@@ -686,8 +689,8 @@ class QDRunner:
         # checkpoint and saved model stay consistent on resume.
         self._save_checkpoint(iteration, save_buffer=False, message="Checkpoint updated after retraining")
 
-        self.teardown_dask()
-        self.client, self.cluster, self.evaluator_future, _ = self.setup_dask(
+        self._teardown_dask()
+        self.client, self.cluster, self.evaluator_future, _ = self._setup_dask(
             model=finetuned_model, embedding_dim=embedding_dim
         )
 
@@ -753,8 +756,6 @@ class QDRunner:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model_copy = copy.deepcopy(self._embedding_model)
 
-        # Reconstruction-loss channel weights must match pretraining; build the
-        # tensor on the training device since vae_loss does not move it.
         dim_weights = _FT.get("dim_weights")
         if dim_weights is not None:
             dim_weights = torch.tensor(dim_weights, dtype=torch.float32, device=device)
