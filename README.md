@@ -37,6 +37,7 @@ Requires Docker, Python >= 3.12.10 and node >= v24.10.0
     - `npm install` (install dependencies for api)
     - `node sim/mapElitesAPI.js` (start the track generation/simulation API on port 4242)
 3. To run the algorithm use the notebook `qd/novelty_search.ipynb` or run the script `qd/ns.py`.
+3. Remember to run the api from root with `node src/sim/mapeElitesAPI.js` before running the algorithm.
 
 Runs checkpoint themselves periodically (archive, stats, finetuned VAE) under `data/ns/`; restarting the script resumes from the latest checkpoint automatically. Tunables (iterations, batch size, retraining cadence, novelty threshold, target archive size) live in `qd/config.py`.
 

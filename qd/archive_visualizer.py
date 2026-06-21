@@ -569,6 +569,19 @@ class ArchiveVisualizer:
                 "type": "bar", "key": "substituted_elites", "color": "tab:blue",
             },
             {
+                "title": "New vs Substituted Elites per Iteration",
+                "ylabel": "Count",
+                "type": "overlay_bar",
+                # Drawn back-to-front: new insertions sit at the back (opaque),
+                # substitutions on top with lower opacity.
+                "series": [
+                    {"key": "new_elites", "label": "New", "color": "tab:red",
+                     "alpha": 0.8, "zorder": 1},
+                    {"key": "substituted_elites", "label": "Substituted",
+                     "color": "tab:blue", "alpha": 0.5, "zorder": 2},
+                ],
+            },
+            {
                 "title": "Mean Archive Fitness", "ylabel": "Mean Fitness",
                 "type": "line", "key": "mean_fitness", "color": "tab:purple",
             },
@@ -638,6 +651,20 @@ class ArchiveVisualizer:
                 else:
                     ax.bar(iterations, values, width=bar_width,
                            color=p["color"], alpha=0.8)
+
+            elif ptype == "overlay_bar":
+                if all(is_empty(get_series(s["key"])) for s in p["series"]):
+                    ax.text(0.5, 0.5, "(no data)", ha="center", va="center",
+                            transform=ax.transAxes, color="gray", fontsize=10)
+                else:
+                    for s_cfg in p["series"]:
+                        values = get_series(s_cfg["key"])
+                        ax.bar(iterations, values, width=bar_width,
+                               label=s_cfg.get("label"),
+                               color=s_cfg.get("color"),
+                               alpha=s_cfg.get("alpha", 0.8),
+                               zorder=s_cfg.get("zorder", 1))
+                    ax.legend()
 
             elif ptype == "multi_line":
                 for s_cfg in p["series"]:
