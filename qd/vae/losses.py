@@ -43,10 +43,10 @@ def vae_loss(recon_x, x, mu, log_var, mask=None,
         CC = CC_c.sum(dim=-1) 
         max_cc = CC.max()
         
-        min_mse = sum_sq - 2 * max_cc
-        min_mse = torch.clamp(min_mse, min=0.0)
+        min_sse = sum_sq - 2 * max_cc
+        min_sse = torch.clamp(min_sse, min=0.0)
 
-        recon_losses.append(min_mse)
+        recon_losses.append(min_sse)
 
     # Stack the list into a single tensor and average
     recon_loss = torch.stack(recon_losses).mean()
