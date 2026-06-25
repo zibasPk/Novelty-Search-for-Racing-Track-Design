@@ -85,7 +85,9 @@ def draw_stack(ax, x, y, w, h, facecolor, n=4, step=0.22):
 
 def label(ax, x, y, text, **kw):
     kw.setdefault("fontsize", 10)
-    ax.text(x, y, text, ha="center", va="center", **kw)
+    kw.setdefault("ha", "center")
+    kw.setdefault("va", "center")
+    ax.text(x, y, text, **kw)
 
 
 def arrow(ax, x0, x1, y=0.0, **kw):
@@ -309,6 +311,96 @@ def build_qd_pipeline(cfg):
     return fig
 
 
+# ── Whole QD pipeline (vertical, half-page portrait) ──────────────────────────
+
+def build_qd_pipeline_vertical(cfg):
+    """Portrait version of :func:`build_qd_pipeline` for a half-page figure.
+
+    The five nodes are stacked top-to-bottom in a single column
+    (Archive → Track → Track metrics → Pretrained VAE encoder), reading
+    downward. The loop is closed by a Behavioural-Descriptor + fitness trunk
+    running up the right-hand side back into the archive, with the periodic
+    fine-tuning branch (Archive → Dataset → VAE) running down the left.
+    """
+    rng = np.random.default_rng(0)
+    fig, ax = plt.subplots(figsize=(8.5, 13.5))
+
+    # white halo behind edge labels so the arrow line is "broken" under the text
+    gap = dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none")
+
+    cx = 4.0                         # shared centre column for the main chain
+    archive_c = (cx, 19.2)
+    track_c = (cx, 14.7)
+    metric_c = (cx, 10.2)
+    vae_c = (cx, 4.7)                # encoder funnel grows upward to vy + 1.9
+    data_c = (-0.2, 12.2)
+
+    a_rx, a_ry = draw_archive(ax, archive_c, rng)
+
+    # self-loop on the left of the archive: the repertoire is periodically
+    # re-projected onto itself with the freshly fine-tuned descriptor space.
+    loop_top = (archive_c[0] - a_rx - 0.1, archive_c[1] + 0.4)
+    loop_bot = (archive_c[0] - a_rx - 0.1, archive_c[1] - 0.4)
+    ax.add_patch(FancyArrowPatch(
+        path=cubic(loop_top, (archive_c[0] - a_rx - 1.7, archive_c[1] + 1.1),
+                   (archive_c[0] - a_rx - 1.7, archive_c[1] - 1.1), loop_bot),
+        arrowstyle="-|>", mutation_scale=24, color=GREY, lw=3.0, zorder=2))
+    qd_label(ax, archive_c[0] - a_rx - 0.8, archive_c[1],
+             "periodical\nremapping", fontsize=10, bbox=gap)
+
+    draw_track(ax, track_c)
+    draw_metrics(ax, metric_c, rng)
+    draw_vae(ax, vae_c)
+    draw_dataset(ax, data_c)
+
+    # main top-to-bottom chain (labels sit to the right of each arrow)
+    qd_arrow(ax, (cx, archive_c[1] - a_ry - 0.2), (cx, track_c[1] + 1.75))
+    qd_label(ax, cx + 1.75, 16.9, "select, mutate\n& crossover", fontsize=10, bbox=gap)
+    qd_arrow(ax, (cx, track_c[1] - 1.95), (cx, metric_c[1] + 0.95))
+    qd_label(ax, cx, 11.95, "simulate", fontsize=10, bbox=gap)
+    qd_arrow(ax, (cx, metric_c[1] - 1.75), (cx, vae_c[1] + 2.15))
+    qd_label(ax, cx, 7.65, "encode", fontsize=10, bbox=gap)
+
+    # Behavioural Descriptor (from VAE) and fitness (from metrics) feed a shared
+    # trunk that runs up the right side and swoops back into the archive.
+    trunk_x = 8.6
+    met_src = (metric_c[0] + 1.55, metric_c[1] + 0.1)
+    vae_src = (vae_c[0] + 0.45, vae_c[1] + 2.0)
+    j_metrics = (trunk_x, metric_c[1] + 1.1)
+    j_vae = (trunk_x, vae_c[1] + 2.5)
+
+    # feeders: leave the source horizontally, arrive at the trunk vertically
+    ax.add_patch(PathPatch(
+        cubic(met_src, (met_src[0] + 1.6, met_src[1]), (trunk_x, j_metrics[1] - 0.9), j_metrics),
+        fill=False, edgecolor=GREY, lw=3.0, zorder=2, capstyle="round"))
+    ax.add_patch(PathPatch(
+        cubic(vae_src, (vae_src[0] + 1.0, vae_src[1] + 0.4), (trunk_x, j_vae[1] - 1.0), j_vae),
+        fill=False, edgecolor=GREY, lw=3.0, zorder=2, capstyle="round"))
+    # shared trunk between the two joins, then one arrow swooping into the archive
+    ax.plot([trunk_x, trunk_x], [j_vae[1], 18.9], color=GREY, lw=3.0, zorder=2,
+            solid_capstyle="round")
+    archive_end = (archive_c[0] + a_rx - 0.2, archive_c[1] + 0.35)
+    ax.add_patch(FancyArrowPatch(
+        path=cubic((trunk_x, 18.9), (trunk_x, 20.3), (archive_c[0] + a_rx + 1.1, 20.3), archive_end),
+        arrowstyle="-|>", mutation_scale=24, color=GREY, lw=3.0, zorder=2))
+    # "Behavioural Descriptor" sits on the descriptor-only trunk segment,
+    # between where it leaves the VAE and where the fitness feeder joins.
+    qd_label(ax, trunk_x, (j_vae[1] + j_metrics[1]) / 2, "Behavioural\nDescriptor", fontsize=11, bbox=gap)
+    qd_label(ax, 7.65, 10.5, "fitness", fontsize=10, bbox=gap)
+
+    # periodic fine-tuning branch down the left: Archive → Dataset → VAE
+    qd_arrow(ax, (archive_c[0] - 1.0, archive_c[1] - a_ry - 0.1), (data_c[0], data_c[1] + 1.5), rad=0.28)
+    qd_label(ax, 0.8, 16.25, "elites", fontsize=10, bbox=gap)
+    qd_arrow(ax, (data_c[0], data_c[1] - 1.4), (vae_c[0] - 1.35, vae_c[1] + 0.35), rad=0.28)
+    qd_label(ax, 0.45, 7.55, "fine-tune", fontsize=10, bbox=gap)
+
+    ax.set_xlim(-2.4, 10.6)
+    ax.set_ylim(2.6, 21.8)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return fig
+
+
 # ── Full pipeline overview ───────────────────────────────────────────────────
 
 def build_full_pipeline(cfg):
@@ -399,6 +491,98 @@ def build_full_pipeline(cfg):
 
     ax.set_xlim(-0.5, cursor + 0.5)
     ax.set_ylim(-3.2, 3.6)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    return fig
+
+
+# ── Full pipeline overview (vertical, half-page portrait) ─────────────────────
+
+def build_full_pipeline_vertical(cfg):
+    """Portrait (top-to-bottom) version of :func:`build_full_pipeline`.
+
+    The same encoder → latent → decoder chain, drawn as a vertical stack of
+    pseudo-3D slabs so it fits a tall half-page column. Each block keeps its
+    name on the left and its tensor shape on the right; the latent bottleneck
+    forks into ``fc_mu`` / ``fc_var`` and merges back through
+    ``reparameterize``.
+    """
+    fig, ax = plt.subplots(figsize=(6.5, 12))
+    n = cfg["n_layers"]
+    hid, lat, freq = cfg["hidden_dim"], cfg["latent_dim"], cfg["freq_bins"]
+
+    W = 2.0            # default slab width
+    arrow_len = 0.4    # visible length of the connecting arrows
+    step = 0.15        # per-layer offset inside a CircularResBlock stack
+
+    state = {"y": 0.0, "first": True}   # y = front-top of the next block (downward)
+
+    def varrow(y0, y1, x=0.0):
+        ax.add_patch(FancyArrowPatch(
+            (x, y0), (x, y1), arrowstyle="-|>", mutation_scale=16,
+            color=ARROW_COLOR, lw=2, zorder=4))
+
+    def slab(title, shape, facecolor, h=0.5, accent=None, stack_n=None, w=W):
+        """Drop one block below the previous one, wiring a downward arrow in."""
+        overhang = DY + ((stack_n - 1) * step * (DY / DX) if stack_n else 0.0)
+        if state["first"]:
+            front_top = state["y"]
+            state["first"] = False
+        else:
+            front_top = state["y"] - arrow_len - overhang
+            varrow(state["y"], front_top + overhang)
+        ybase = front_top - h
+        if stack_n:
+            right, _ = draw_stack(ax, -w / 2, ybase, w, h, facecolor, n=stack_n)
+        else:
+            right, _ = draw_cuboid(ax, -w / 2, ybase, w, h, facecolor)
+            if accent:
+                draw_cuboid(ax, w / 2 - 0.18, ybase, 0.18, h, accent)
+        cy = ybase + h / 2 + overhang / 2
+        label(ax, -w / 2 - 0.5, cy, title, ha="right", fontweight="bold", fontsize=9.5)
+        label(ax, right + 0.4, cy, shape, ha="left", fontsize=9, color=SUBTLE)
+        state["y"] = ybase
+        return ybase
+
+    dils = ", ".join(str(2 ** i) for i in range(n))
+    dils_rev = ", ".join(str(2 ** i) for i in reversed(range(n)))
+
+    # ── encoder ──
+    slab("Input", "[T, 3]\nspeed, steer, pos", ENCODER_FACE, h=0.4, accent=ENCODER_ACCENT, w=1.5)
+    slab("input_projection\nLinear(3→128)", f"[T, {hid}]", ENCODER_FACE)
+    slab(f"CircularResBlock ×{n}\ndilation {dils}", f"[T, {hid}]", ENCODER_FACE, stack_n=n)
+    slab(f"DFT Power Pool\nK={freq}", f"[{freq}, {hid}]", ENCODER_FACE, accent=ENCODER_ACCENT)
+
+    # ── latent bottleneck: fc_mu / fc_var fork → reparameterize ──
+    fork_y = state["y"]
+    mh, mw = 0.55, 0.6
+    mv_top = fork_y - arrow_len - DY
+    mv_base = mv_top - mh
+    cyl = mv_base + mh / 2 + DY / 2
+    draw_cuboid(ax, -1.0, mv_base, mw, mh, LATENT_FACE)
+    rv = draw_cuboid(ax, 0.4, mv_base, mw, mh, LATENT_FACE)[0]
+    varrow(fork_y, mv_top + DY, x=-0.7)
+    varrow(fork_y, mv_top + DY, x=0.7)
+    label(ax, -1.0 - 0.35, cyl, f"fc_mu\nμ [{lat}]", ha="right", fontweight="bold", fontsize=9.5)
+    label(ax, rv + 0.35, cyl, f"fc_var\nσ² [{lat}]", ha="left", fontweight="bold", fontsize=9.5)
+
+    zh, zw = 0.6, 0.85
+    z_top = mv_base - arrow_len - DY
+    z_base = z_top - zh
+    rz = draw_cuboid(ax, -zw / 2, z_base, zw, zh, LATENT_FACE)[0]
+    dashed(ax, (-0.7, mv_base), (0, z_top + DY))
+    dashed(ax, (0.7, mv_base), (0, z_top + DY))
+    label(ax, rz + 0.35, z_base + zh / 2 + DY / 2, f"reparameterize\nz ~ N(μ, σ²)  [{lat}]",
+          ha="left", fontweight="bold", fontsize=9.5)
+    state["y"] = z_base
+
+    # ── decoder ──
+    slab("fc + broadcast\n+ PositionalEnc", f"[T, {hid}]", DECODER_FACE)
+    slab(f"CircularResBlock ×{n}\ndilation {dils_rev}", f"[T, {hid}]", DECODER_FACE, stack_n=n)
+    slab("final_projection\n+ activations", "[T, 3]\nspeed, steer, pos", OUTPUT_FACE, h=0.4)
+
+    ax.set_xlim(-4.0, 3.9)
+    ax.set_ylim(state["y"] - 0.7, 1.2)
     ax.set_aspect("equal")
     ax.axis("off")
     return fig
@@ -631,7 +815,9 @@ def main():
     cfg = MODEL_CONFIG
 
     save_fig(build_qd_pipeline(cfg), "qd_pipeline.png")
+    save_fig(build_qd_pipeline_vertical(cfg), "qd_pipeline_vertical.png")
     save_fig(build_full_pipeline(cfg), "vae_architecture.png")
+    save_fig(build_full_pipeline_vertical(cfg), "vae_architecture_vertical.png")
     save_fig(build_resblock_detail(cfg), "circular_resblock.png")
     save_fig(build_circular_padding(cfg), "circular_padding.png")
     save_fig(build_dilation_field(cfg), "dilation_receptive_field.png")
