@@ -45,7 +45,7 @@ K_CSC = 1e-4
 CHECKPOINT_EVERY = 50
 
 # --- Directories ---
-EMBEDDING_MODEL_PATH = "qd/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_canon_1.pth"
+EMBEDDING_MODEL_PATH = "qd/pretrained_models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_canon_1.pth"
 PRECOMPILED_EMBEDDINGS_PATH = "qd/datasets/track_embeddings_metrics_32dim_rngMixDS_tita_circular_canon_1.npz"
 NS_DIR = "data/ns/"
 CHECKPOINT_DIR = "checkpoints/"

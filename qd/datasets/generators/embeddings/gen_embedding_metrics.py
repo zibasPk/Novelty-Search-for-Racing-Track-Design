@@ -50,7 +50,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate original track embeddings from VAE")
     parser.add_argument("--data", type=str, default="qd/datasets/training/dataset20k_metrics_mixedRng_tita_canonicized.npz", 
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="qd/embeddings/models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_canon_1.pth", 
+    parser.add_argument("--model", type=str, default="qd/pretrained_models/model_metrics_VAE/model_metrics_VAE_mixRng_tita_circular_canon_1.pth", 
                         help="Path to trained .pth model")
     parser.add_argument("--output", type=str, default="qd/datasets/embeddings/track_embeddings_metrics_32dim_rngMixDS_tita_circular_canon_1.npz", 
                         help="Path to save output .npz")

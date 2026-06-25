@@ -240,7 +240,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate Track Embeddings from VAE with Dimensionality Reduction")
     parser.add_argument("--data", type=str, default="datasets/dataset10k_xml.npz",
                         help="Path to input .npz dataset")
-    parser.add_argument("--model", type=str, default="models/model_metrics_VAE/model_xml_VAE_latent32.pth",
+    parser.add_argument("--model", type=str, default="qd/pretrained_models/model_xml_VAE/model_xml_VAE_latent32.pth",
                         help="Path to trained .pth model")
     parser.add_argument("--output", type=str, default="datasets/embeddings/track_embeddings_xml_32dim_mu.npz",
                         help="Path to save output .npz")
