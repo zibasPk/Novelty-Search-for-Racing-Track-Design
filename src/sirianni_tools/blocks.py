@@ -483,7 +483,7 @@ def readDynamics(trackName, trackData):
             dist = float(row[11])
             end = trackData[seg][ENDLENGTH]
 
-            if lap == 1 and dist <= end:
+            if lap == 1 and dist <= end: # still in the first segment
                 accel.append(float(row[23]))
                 brake.append(float(row[24]))
                 steer.append(float(row[22]))

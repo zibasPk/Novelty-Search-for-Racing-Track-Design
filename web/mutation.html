@@ -6,6 +6,14 @@
   <title>Mutation Visualization</title>
   <script src="/src/lib/p5.js"></script>
   <script src="/src/lib/rhill-voronoi-core.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "simplex-noise": "/src/lib/simplex-noise.esm.js",
+      "loglevel": "/src/lib/loglevel.esm.js"
+    }
+  }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -85,7 +93,7 @@
       }
       
       // Generate initial track
-      let initialTrack = await generateTrack(mode, BBOX, seed, trackSize, false, dataSet, selectedCells);
+      let initialTrack = await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false, dataSet, selected: selectedCells });
       
       // Apply mutation
       if (isNaN(intensityMutation)) intensityMutation = 10;
@@ -98,7 +106,7 @@
       }
       console.log(mutatedData.ds.length)
       // Generate final track with mutated data
-      trackResult = await generateTrack(mode, BBOX, seed, trackSize, false, mutatedData.ds, mutatedData.sel || mutatedData.hull);
+      trackResult = await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false, dataSet: mutatedData.ds, selected: mutatedData.sel || mutatedData.hull });
     
       splinePoints = await trackResult.track;
       p5Instance.redraw();

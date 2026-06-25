@@ -29,7 +29,7 @@
 #include <map>
 #include <raceman.h>
 
-// Log every 2 seconds (100 simulation steps at 20ms each)
+// Log every 0.2 seconds (100 simulation steps at 2ms each)
 const int LOGGER_SAMPLE_RATE = 100;
 
 class Logger {

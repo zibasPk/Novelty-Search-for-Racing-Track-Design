@@ -7,15 +7,23 @@ web/src
 
 .vscode/
 
-venv/
+.venv/
+logs/
 
-mapelite/first_test/
+qd/first_test/
 
 src/data/tests/
+__pycache__/
 
+data/archive/
+
+*.mp4
 *.xml
 *.json
 !package.json
 *.pkl
 
 *.png
+*.npz
+
+*.egg-info

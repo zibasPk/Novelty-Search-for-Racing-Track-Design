@@ -45,6 +45,8 @@ COPY torcs-1.3.7-master /torcs-code
 # Set working directory
 WORKDIR /torcs-code
 
+RUN chmod +x configure
+
 # Configure and build TORCS
 RUN ./configure --disable-xrandr --x-libraries=/usr/lib/ \
     && make \
@@ -54,5 +56,4 @@ RUN ./configure --disable-xrandr --x-libraries=/usr/lib/ \
 # Set the working directory to the default directory
 WORKDIR /root
 
-# Entry point
-ENTRYPOINT ["/bin/bash"]
+CMD ["/bin/bash"]

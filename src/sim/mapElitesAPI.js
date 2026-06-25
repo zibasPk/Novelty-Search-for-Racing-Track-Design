@@ -1,17 +1,30 @@
 import express from 'express';
-import cors from 'cors'; // <--- 1. IMPORT CORS HERE
+import cors from 'cors';
 import { generateTrack } from '../trackGen/trackGenerator.js';
 import { crossover, crossover2 } from '../genetic/crossoverVoronoi.js';
 import { crossover as crossoverConvexHull } from '../genetic/crossoverConvexHull.js';
 import { mutationConvexHull, mutationVoronoi } from '../genetic/mutation.js';
-import { BBOX, JSON_DEBUG } from '../utils/constants.js';
+import { BBOX, JSON_DEBUG, LOG_DIR } from '../utils/constants.js';
 import { simulate } from './simulateTrack.js';
-import log from "loglevel";
+import { initLogger } from '../utils/logger.js';
+import * as utils from '../utils/utils.js';
+
+
+// setup logging
+let dateTime = new Date().toISOString().replace(/:/g, '-');
+let logPath = LOG_DIR + `Api_${dateTime}.log`;
+
+let log = initLogger({
+  filePath: logPath,
+  level: "debug",
+  withTimestamp: true
+});
+
 
 const app = express();
 
 // --- 2. ENABLE CORS HERE ---
-// This allows your frontend (likely on port 3000) to access this API
+// This allows frontends to access this API ( both web and jupyter notebook )
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:8888']
 }));
@@ -23,16 +36,25 @@ app.use(express.json());
    Helpers
    ──────────────────────────────────────────────────────────── */
 const safeArray = arr => (Array.isArray(arr) ? arr : []);
+const isDefined = value => value !== undefined && value !== null;
+const requireFields = (body, fields) => {
+  const missing = fields.filter(field => !isDefined(body[field]));
+  return missing.length ? missing : null;
+};
 
 /* ─────────────────────────────────────────────────────────────
    /generate
    ──────────────────────────────────────────────────────────── */
 app.post('/generate', async (req, res) => {
   try {
-    const { id, mode, trackSize } = req.body;
+    const { id, mode, trackSize, rngMode } = req.body;
+    const missing = requireFields(req.body, ['id', 'mode', 'trackSize', 'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
 
     const { track, generator, splineVector } =
-      await generateTrack(mode, BBOX, id, trackSize, JSON_DEBUG);
+      await generateTrack({ mode, bbox: BBOX, seed: id, trackSize, saveJSON: JSON_DEBUG, rngMode });
 
     const response = {
       id,
@@ -48,7 +70,7 @@ app.post('/generate', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error in /generate:', error);
+    log.error(`/generate for ${req.body.id}:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -56,10 +78,22 @@ app.post('/generate', async (req, res) => {
 
 app.post('/genforweb', async (req, res) => {
   try {
-    const { id, mode, trackSize } = req.body;
+    const { id, mode, trackSize , perlin_parameters, rngMode, canonicalize = true} = req.body;
+    const missing = requireFields(req.body, ['id', 'mode', 'trackSize',  'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
 
-    const { track, generator, splineVector } =
-      await generateTrack(mode, BBOX, id, trackSize, JSON_DEBUG);
+    const { track, generator, splineVector } = await generateTrack({
+      mode,
+      bbox: BBOX,
+      seed: id,
+      trackSize,
+      saveJSON: false,
+      rngMode: rngMode,
+      perlin_parameters,
+      canonicalize
+    });
 
     const response = {
       mode,
@@ -70,7 +104,56 @@ app.post('/genforweb', async (req, res) => {
 
     res.json(response);
   } catch (error) {
-    console.error('Error in /generate:', error);
+    log.error(`/genforweb for ${req.body.id}:`, error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   /reconstruct
+   Rebuild a track from its genotype (mode, dataSet, selectedCells, trackSize)
+   and return the spline points + generator metadata.
+   ──────────────────────────────────────────────────────────── */
+app.post('/reconstruct', async (req, res) => {
+  try {
+    const { mode, seed, dataSet, selectedCells, trackSize, canonicalize = true } = req.body;
+    const missing = requireFields(req.body, ['mode', 'dataSet','selectedCells']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
+
+    const sel = safeArray(selectedCells);
+
+    const timeout = 5000;
+    const { track, generator, splineVector } = await Promise.race([
+      generateTrack({
+        mode,
+        bbox: BBOX,
+        seed,
+        trackSize,
+        saveJSON: false,
+        dataSet,
+        selected: sel,
+        canonicalize
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Track generation timed out')), timeout))
+    ]);
+
+    res.json({
+      mode,
+      track,                           // full spline-smoothed point list
+      splineVector,                    // resampled fixed-length vector
+      trackSize: generator.trackSize,
+      dataSet: generator.dataSet,
+      edges: generator.diagram.edges,
+      selectedCells: safeArray(generator.selectedCells).map(cell => ({
+        x: cell.site.x,
+        y: cell.site.y
+      }))
+    });
+  } catch (error) {
+    log.error('/reconstruct error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -80,26 +163,45 @@ app.post('/genforweb', async (req, res) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/evaluate', async (req, res) => {
   try {
-    const { id, mode, dataSet, selectedCells } = req.body;
+    const { id, mode, dataSet, selectedCells, rngMode, getTraces} = req.body;
+
+    const missing = requireFields(req.body, ['id', 'mode', 'dataSet', 'selectedCells', 'rngMode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
 
     const sel = safeArray(selectedCells);
-    const simulationResult = await simulate(
+
+
+    const params = {
       mode,
-      sel.length,
+      trackSize: sel.length,
       dataSet,
-      sel,
-      id,
-      JSON_DEBUG
-    );
+      selected: sel,
+      seed: id,
+      saveJson: JSON_DEBUG,
+      plot:false,
+      rngMode,
+    }
+    if (getTraces) {
+      params.getTraces = true;
+    }
+    
+
+    const simulationResult = await simulate(params);
 
     res.json({
       fitness: simulationResult.fitness,
       splineVector: simulationResult.splineVector
     });
+    let resultsToPrint = simulationResult.fitness;
+    if (resultsToPrint.embedding_data) {
+      resultsToPrint.embedding_data = simulationResult.fitness.embedding_data.length;
+    }
     log.info('Returning fitness from /evaluate: ',
-      JSON.stringify(simulationResult.fitness));
+      JSON.stringify(resultsToPrint));
   } catch (error) {
-    log.error('Error in /evaluate:', error);
+    log.error(`/evaluate for ${req.body.id}:`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -110,7 +212,11 @@ app.post('/evaluate', async (req, res) => {
 app.post('/crossover', async (req, res, next) => {
   log.info('Crossover endpoint called');
   try {
-    const { parent1, parent2, mode } = req.body;
+    const { parent1, parent2, mode, genetic_seed } = req.body;
+    const missing = requireFields(req.body, ['parent1', 'parent2', 'mode']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
     if (!parent1 || !parent2 ||
       !parent1.dataSet || !parent2.dataSet) {
       return res.status(400).json({ error: 'Invalid parent data' });
@@ -120,28 +226,28 @@ app.post('/crossover', async (req, res, next) => {
 
     const [result1, result2] = await Promise.all([
       Promise.race([
-        generateTrack(
+        generateTrack({
           mode,
-          BBOX,
-          parent1.id,
-          parent1.trackSize,
-          false,
-          parent1.dataSet,
-          safeArray(parent1.selectedCells)
-        ),
+          bbox: BBOX,
+          seed: parent1.id,
+          trackSize: parent1.trackSize,
+          saveJSON: false,
+          dataSet: parent1.dataSet,
+          selected: safeArray(parent1.selectedCells)
+        }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Track generation timed out')), timeout))
       ]),
       Promise.race([
-        generateTrack(
+        generateTrack({
           mode,
-          BBOX,
-          parent2.id,
-          parent2.trackSize,
-          false,
-          parent2.dataSet,
-          safeArray(parent2.selectedCells)
-        ),
+          bbox: BBOX,
+          seed: parent2.id,
+          trackSize: parent2.trackSize,
+          saveJSON: false,
+          dataSet: parent2.dataSet,
+          selected: safeArray(parent2.selectedCells)
+        }),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Track generation timed out')), timeout))
       ])
@@ -154,17 +260,17 @@ app.post('/crossover', async (req, res, next) => {
       log.debug('CROSSOVER VORONOI');
       try {
         const result = Math.random() < 0 //mix between two crossovers , 0.5 to balance, 1 for only crossover method 1 , 0 only method 2 
-          ? crossover(trackGenerator1, trackGenerator2, true)
-          : crossover2(trackGenerator2, trackGenerator1, true);
+          ? crossover(trackGenerator1, trackGenerator2, true, genetic_seed)
+          : crossover2(trackGenerator2, trackGenerator1, true, genetic_seed);
 
         log.debug("Dataset lenght: ", result.ds.length);
         log.debug("Selected cells lenght: ", result.sel.length);
 
         return res.json({ offspring: { ds: result.ds, sel: result.sel } });
       } catch (err) {
-        log.error('Error during crossover:', err);
-        log.error('Parent 1:', JSON.stringify(parent1, null, 2));
-        log.error('Parent 2:', JSON.stringify(parent2, null, 2));
+        log.error('Error during crossover:', err.message);
+        log.error('Parent 1:', parent1.id);
+        log.error('Parent 2:', parent2.id);
         return res.status(500).json({ error: 'Crossover failed.' });
       }
     }
@@ -173,7 +279,7 @@ app.post('/crossover', async (req, res, next) => {
     const result = crossoverConvexHull(trackGenerator1, trackGenerator2, true);
     res.json({ offspring: { ds: result.ds } });
   } catch (error) {
-    console.error('Error in /crossover:', error);
+    log.error(`/crossover for ${req.body.parent1.id} and ${req.body.parent2.id}:`, error);
     next(error);
   }
 });
@@ -183,53 +289,82 @@ app.post('/crossover', async (req, res, next) => {
    ──────────────────────────────────────────────────────────── */
 app.post('/mutate', async (req, res, next) => {
   try {
-    const { individual, intensityMutation = 50 } = req.body;
+    const { individual, intensityMutation = 50, genetic_seed } = req.body;
+    const missing = requireFields(req.body, ['individual']);
+    if (missing) {
+      return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    }
     if (!individual || !individual.dataSet) {
       return res.status(400).json({ error: 'Invalid individual data' });
     }
 
     const timeout = 5000;
     const { generator: trackGenerator } = await Promise.race([
-      generateTrack(
-        individual.mode,
-        BBOX,
-        individual.id,
-        individual.trackSize,
-        false,
-        individual.dataSet,
-        safeArray(individual.selectedCells)
-      ),
+      generateTrack({
+        mode: individual.mode,
+        bbox: BBOX,
+        seed: individual.id,
+        trackSize: individual.trackSize,
+        saveJSON: false,
+        dataSet: individual.dataSet,
+        selected: safeArray(individual.selectedCells)
+      }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Track generation timed out')), timeout))
     ]);
 
+
+    let mutationSeed = genetic_seed; // we use the id because its generated at random beforehand. Watchout same ids will generate the same mutation.
+
     if (individual.mode === 'voronoi') {
-      const mutatedData = mutationVoronoi(trackGenerator, intensityMutation);
+      const mutatedData = mutationVoronoi(trackGenerator, intensityMutation, mutationSeed);
       return res.json({
         mutated: { dataSet: mutatedData.ds, selectedCells: mutatedData.sel }
       });
     }
 
     if (individual.mode === 'convexHull') {
-      const mutatedData = mutationConvexHull(trackGenerator, intensityMutation);
+      const mutatedData = mutationConvexHull(trackGenerator, intensityMutation, mutationSeed);
       return res.json({ mutated: { dataSet: mutatedData.ds } });
     }
 
     res.status(400).json({ error: 'Invalid track generation mode in /mutate' });
   } catch (error) {
-    console.error('Error in /mutate:', error);
+    log.error(`/mutate for ${req.body.individual.id}:`, error.message);
     next(error);
   }
 });
 
 
-log.setLevel("info");
+
+/* ─────────────────────────────────────────────────────────────
+   /canonicalize
+   Accept a raw splineVector and return its canonical form:
+   1. winding-order normalization (CW → CCW via x-mirror)
+   2. start-point rotation to the longest straight segment
+   ──────────────────────────────────────────────────────────── */
+app.post('/canonicalize', async (req, res) => {
+  try {
+    const { splineVector } = req.body;
+    if (!Array.isArray(splineVector) || splineVector.length < 3) {
+      return res.status(400).json({ error: 'splineVector must be an array of at least 3 {x,y} points' });
+    }
+
+    let track = splineVector.map(p => ({ x: p.x, y: p.y }));
+    track = utils.canonicalizeTrack(track);
+
+    res.json({ splineVector: track });
+  } catch (error) {
+    log.error('/canonicalize error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /* ─────────────────────────────────────────────────────────────
    Global error handler
    ──────────────────────────────────────────────────────────── */
 app.use((error, req, res, next) => {
-  console.error('Error:', error);
+  log.error('Error:', error);
   res.status(500).json({ error: 'Internal server error' });
 });
 

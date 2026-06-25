@@ -18,6 +18,14 @@
   </style>
   <script src="/src/lib/p5.js"></script>
   <script src="/src/lib/rhill-voronoi-core.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "simplex-noise": "/src/lib/simplex-noise.esm.js",
+      "loglevel": "/src/lib/loglevel.esm.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="track-container"></div>
@@ -85,15 +93,15 @@
       }
 
       try {
-        const result = await generateTrack(
-          trackConfig.mode, 
-          BBOX, 
-          trackConfig.seed, 
-          trackConfig.trackSize, 
-          false, 
-          [], 
-          []
-        );
+        const result = await generateTrack({
+          mode: trackConfig.mode,
+          bbox: BBOX,
+          seed: trackConfig.seed,
+          trackSize: trackConfig.trackSize,
+          saveJSON: false,
+          dataSet: [],
+          selected: []
+        });
         currentTrack = {
           ...result,
           mode: trackConfig.mode,

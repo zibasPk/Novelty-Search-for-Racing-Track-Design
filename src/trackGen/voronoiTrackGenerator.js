@@ -1,27 +1,100 @@
 import Voronoi from '../lib/rhill-voronoi-core.js';
-import { NUMBER_OF_VORONOI_SITES } from "../utils/constants.js"
+import { NUMBER_OF_VORONOI_SITES, DEFAULT_PERLIN_PARAMETERS, RngMode } from "../utils/constants.js"
 import { prng_alea } from '../lib/esm-seedrandom/alea.min.mjs';
+import { createNoise2D } from 'simplex-noise';
+import log from "loglevel";
 
 export class VoronoiTrackGenerator {
-  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = []) {
+  constructor(bbox, seed, trackSize, dataSet = [], selectedVoronoiSites = [], rngMode, perlin_parameters = null) {
     this.bbox = bbox;
     this.randomGen = prng_alea(seed);
+    this.noise = createNoise2D(this.randomGen);
+    this.perlin_parameters = perlin_parameters || DEFAULT_PERLIN_PARAMETERS;
     this.voronoi = new Voronoi();
     this.trackSize = trackSize;
-    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints();
+    this.dataSet = dataSet.length > 0 ? dataSet : this.generatePoints(rngMode);
     this.diagram = this.voronoi.compute(this.dataSet, this.bbox);
 
     this.patchPath = [];
     this.selectedCells = selectedVoronoiSites.length > 0 ?
       this.sitesFromInput(selectedVoronoiSites) : this.selectCellsForTrack(trackSize);
     this.trackEdges = this.findTrackEdges();
+
   }
 
-  generatePoints() {
-    return Array.from({ length: NUMBER_OF_VORONOI_SITES }, () => ({
-      x: this.randomGen() * this.bbox.xr,
-      y: this.randomGen() * this.bbox.yb
-    }));
+  generatePoints(genType) {
+    switch (genType) {
+      case RngMode.PERLIN:
+        return this.perlinPointGen();
+      case RngMode.UNIFORM:
+        return this.uniformPointGen();
+      default:
+        log.warn(`Unknown genType "${genType}", defaulting to uniform point generation.`);
+        return this.uniformPointGen();
+    }
+  }
+
+  perlinPointGen() {
+    let points = [];
+
+    const noiseFrequency = this.perlin_parameters.NOISE_FREQUENCY;
+    const densityThreshold = this.perlin_parameters.densityThreshold;
+    const densityExponent = this.perlin_parameters.densityExponent;
+    const minSpacingScale = this.perlin_parameters.minDistScale;
+
+    const width = this.bbox.xr - this.bbox.xl;
+    const height = this.bbox.yb - this.bbox.yt;
+    let noiseScale = noiseFrequency / Math.max(width, height);
+
+    const area = width * height;
+    const gridCellSize = Math.sqrt(area / NUMBER_OF_VORONOI_SITES) * minSpacingScale;
+    const occupiedGrid = new Set();
+
+    let safetyCounter = 0; // To prevent infinite loops
+    const MAX_ATTEMPTS = 100000;
+    while (points.length < NUMBER_OF_VORONOI_SITES && safetyCounter < MAX_ATTEMPTS) {
+      safetyCounter++;
+      const x = this.randomGen() * this.bbox.xr;
+      const y = this.randomGen() * this.bbox.yb;
+
+      const col = Math.floor(x / gridCellSize);
+      const row = Math.floor(y / gridCellSize);
+      const key = `${col},${row}`;
+      if (occupiedGrid.has(key)) {
+        continue; // Skip if this grid cell is already occupied
+      }
+
+      let n = this.noise(x * noiseScale, y * noiseScale);
+      // remap to [0, 1]
+      n = (n + 1) / 2;
+
+      n = Math.pow(
+        Math.max(0, n - densityThreshold),
+        densityExponent
+      );
+
+      if (this.randomGen() < n) {
+        points.push({ x, y });
+        occupiedGrid.add(key);
+      }
+    }
+
+    if (safetyCounter >= MAX_ATTEMPTS) {
+      throw new Error(`Failed to generate enough points after ${MAX_ATTEMPTS} attempts. Generated ${points.length} points.`);
+    }
+
+    return points;
+  }
+
+  uniformPointGen() {
+    let points = [];
+    for (let i = 0; i < NUMBER_OF_VORONOI_SITES; i++) {
+      points.push({
+        x: this.randomGen() * this.bbox.xr,
+        y: this.randomGen() * this.bbox.yb
+      });
+    }
+    return points;
   }
 
   sitesFromInput(points) {
@@ -221,5 +294,5 @@ class PathFinder {
 
     return null; // No path found
   }
-  
+
 }

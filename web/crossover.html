@@ -4,6 +4,14 @@
   <title>Crossover Lab</title>
   <script src="/src/lib/p5.js"></script>
   <script src="/src/lib/rhill-voronoi-core.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "simplex-noise": "/src/lib/simplex-noise.esm.js",
+      "loglevel": "/src/lib/loglevel.esm.js"
+    }
+  }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -137,9 +145,9 @@ async function genTrack(canvasId, seed, trackSize, crossoverMethod, dataSet = []
           result = convexHullCrossover(parent1, parent2);
           lineParameters = result.lineParameters;
         }
-        trackResult = await generateTrack(mode, BBOX, seed, trackSize, false, result.ds, result.sel);
+        trackResult = await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false, dataSet: result.ds, selected: result.sel });
       } else {
-        trackResult = await generateTrack(mode, BBOX, seed, trackSize, false, dataSet, selectedCells);
+        trackResult = await generateTrack({ mode, bbox: BBOX, seed, trackSize, saveJSON: false, dataSet, selected: selectedCells });
       }
       
       setupCanvas(canvasId, trackResult.generator, trackResult.track);

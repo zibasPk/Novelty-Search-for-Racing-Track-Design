@@ -17,6 +17,10 @@ __email__ = "jacopo.sirianni@mail.polimi.it"
 def plotPositionsVariations(variations, filename):
     if not variations:  # Handle empty sequence
         return [0, 0, 0]  # return default values
+    
+    if len(set(variations)) <= 1:
+        print("  -> Warning: Not enough variation in data to plot histogram.")
+        return [0, 0, 0]  # return default values
 
     plt.xlabel("Positions gained [1]")
     plt.ylabel("Number of drivers [1]")

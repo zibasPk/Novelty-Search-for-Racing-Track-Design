@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qd"
+version = "0.1.0"
+description = "Quality Diversity for Racing Track Design Using MAP-Elites"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Martino Piaggi", email = "martino.piaggi@gmail.com"},
+    {name = "Milo Brontesi", email = "milo.brontesi@gmail.com"}
+]
+dependencies = [
+    "numpy==2.4.2",
+    "requests==2.32.5",
+    "joblib==1.5.0",
+    "ribs[all]==0.8.3",
+    "umap-learn==0.5.11",
+    "scipy==1.17.1",
+    "scikit-learn==1.8.0",
+    "pandas==3.0.1",
+    "matplotlib==3.10.8",
+    "seaborn==0.13.2",
+    "dash==4.0.0",
+    "plotly==6.5.2",
+    "torch==2.10.0",
+    "tqdm==4.67.3",
+    "dask[distributed]==2026.1.2",
+    "structlog==25.5.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "jupyter",
+    "notebook"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qd*"]
+
+[tool.isort]
+profile = "black"
+
+[tool.black]
+line-length = 120

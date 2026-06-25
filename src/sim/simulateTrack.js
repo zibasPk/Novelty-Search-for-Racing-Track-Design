@@ -1,7 +1,7 @@
 import { exec } from 'child_process';
 import { promises as fs } from 'fs';
 import { generateTrack } from '../trackGen/trackGenerator.js';
-import {TorcsXMLGenerator} from '../utils/torcsXMLGenerator.js';
+import { TorcsXMLGenerator } from '../trackGen/torcsXMLGenerator.js';
 import { saveFitnessToJson } from '../utils/jsonUtils.js';
 import path from 'path';
 import os from 'os';
@@ -11,20 +11,22 @@ import {
   DOCKER_IMAGE_NAME,
   MEMORY_LIMIT,
   SIMULATION_TIMEOUT,
-  OUTPUT_DIR_XML
+  TARGET_RACE_DURATION,
+  DEFAULT_REPETITIONS,
+  XML_DEBUG
 } from '../utils/constants.js';
 import { SimulationTimeoutError } from '../utils/errors.js';
 import log from "loglevel";
 
 const executeCommand = (command) => {
   return new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
+    exec(command, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
       if (error) {
-        reject(new Error(`Command failed: ${error.message}`));
+        reject(new Error(`${error.message}`));
         return;
       }
       if (stderr) {
-        console.warn(`stderr: ${stderr}`);
+        log.warn(`stderr: ${stderr}`);
       }
       resolve(stdout.trim());
     });
@@ -32,13 +34,16 @@ const executeCommand = (command) => {
 };
 
 export async function simulate(
-  mode = MODE,
+ { mode = MODE,
   trackSize = 0,
   dataSet = [],
   selected = [],
   seed = null,
   saveJson = false,
-  plot = false
+  plot = false,
+  getTraces = false,
+  rngMode,
+} = {}
 ) {
   if (isNaN(trackSize)) {
     if (mode === 'voronoi') {
@@ -49,53 +54,41 @@ export async function simulate(
       trackSize = 50;
     }
   }
-  /* 
-  // Generate initial track
-  let initialTrack = await generateTrack(mode, BBOX, seed, trackSize, true, dataSet, selected);
-      
-  // Apply mutation
-  const intensityMutation = 1; 
-  
-  let mutatedData;
-  if (mode === "voronoi") {
-    mutatedData = mutationVoronoi(initialTrack.generator, intensityMutation);
-  } else {
-    mutatedData = mutationConvexHull(initialTrack.generator, intensityMutation);
-  }
-  // Generate final track with mutated data
-  const trackResults = await generateTrack(mode, BBOX, seed, trackSize, false, mutatedData.ds, mutatedData.sel || mutatedData.hull);
-  */
 
   // generate track json
-  const trackResults = await generateTrack(
-    mode, BBOX, seed, trackSize,
-    saveJson, dataSet, selected
-  );
+  const trackResults = await generateTrack({
+    mode, bbox: BBOX, seed, trackSize,
+    saveJSON: saveJson, dataSet, selected, rngMode
+  });
+  
 
   // translate to XML for TORCS
   const xmlGenerator = new TorcsXMLGenerator(trackResults.track, seed);
-  const trackXml = xmlGenerator.generateXML(0, true);
+  const trackXml = xmlGenerator.generateXML(0, XML_DEBUG);
   log.info(`SEED: ${seed}`);
   log.info(`MODE: ${mode}`);
   log.info(`trackSize: ${trackSize}`);
+  log.info('TrackLength:', xmlGenerator.getLength().toFixed(2));
 
   let containerId;
   let timeoutId;
-  try {
-    containerId = await startDockerContainer(seed);
-   
-    // Move track XML to Docker container and generate track files
-    const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
-    log.info(trackGenOutput);
 
-    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run-simulations.py --track-export -r 5 --json ${plot ? '' : '--plots'}`;
+  try {
+    log.debug(`Starting Docker container for simulation ${seed}`);
+    containerId = await startDockerContainer(seed);
+
+    // Move track XML to Docker container and generate track files
+    log.debug(`Generating and moving track files to Docker container for ${seed}`);
+    const trackGenOutput = await generateAndMoveTrackFiles(containerId, trackXml, seed);
+
+    const simCommand = `docker exec ${containerId} python3 /usr/local/lib/sirianni_tools/run_simulations.py --track-export -e --repetitions ${DEFAULT_REPETITIONS} -d ${TARGET_RACE_DURATION} --json ${plot ? '--plots' : ''} ${getTraces ? '-tr' : ''}`;
     const simulationOutput = await Promise.race([
       executeCommand(simCommand),
       new Promise((_, reject) =>
         timeoutId = setTimeout(() => reject(new SimulationTimeoutError()), SIMULATION_TIMEOUT)
       )
     ]);
-  
+
     let rawMetrics = {};
     const jsonStart = simulationOutput.indexOf('===FINAL_JSON_START===');
     const jsonEnd = simulationOutput.indexOf('===FINAL_JSON_END===', jsonStart);
@@ -105,7 +98,7 @@ export async function simulate(
         .trim();
       rawMetrics = JSON.parse(jsonString);
     } else {
-      throw new Error('JSON markers not found in run-simulations.py output.');
+      throw new Error('JSON markers not found in run_simulations.py output.');
     }
     const { length, deltaX, deltaY, deltaAngleDegrees } = parseTrackgenOutput(trackGenOutput);
     const {
@@ -151,31 +144,12 @@ export async function simulate(
         seed,
         mode,
         trackResults.generator.trackSize,
-        {
-          length: fitness.track_length || fitness.length,
-          deltaX: fitness.deltaX,
-          deltaY: fitness.deltaY,
-          deltaAngleDegrees: fitness.deltaAngleDegrees,
-          speed_entropy: fitness.speed_entropy,
-          acceleration_entropy: fitness.acceleration_entropy,
-          braking_entropy: fitness.braking_entropy,
-          positions_mean: fitness.positions_mean,
-          avg_radius_mean: fitness.avg_radius_mean,
-          gaps_mean: fitness.gaps_mean,
-          right_bends: fitness.right_bends,
-          avg_radius_var: fitness.avg_radius_var,
-          total_overtakes: fitness.total_overtakes,
-          straight_sections: fitness.straight_sections,
-          gaps_var: fitness.gaps_var,
-          left_bends: fitness.left_bends,
-          positions_var: fitness.positions_var,
-          curvature_entropy: fitness.curvature_entropy
-        }
+        rngMode,
+        fitness
       );
     }
     return { fitness: fitness, splineVector: trackResults.splineVector };
   } catch (err) {
-    console.error(`Error: ${err.message}`);
     throw err;
   } finally {
     clearTimeout(timeoutId);
@@ -186,9 +160,10 @@ export async function simulate(
 }
 
 async function startDockerContainer(seed) {
-  let containterName = "track_simulation_" + seed;
+  let randomSuffix = Math.random().toString(36).substring(2, 7);
+  let containterName = "track_simulation_" + seed + "_" + randomSuffix;
   const containerId = await executeCommand(
-    `docker run -d -it --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME}`
+    `docker run -d --memory ${MEMORY_LIMIT} --name ${containterName} ${DOCKER_IMAGE_NAME} sleep infinity`
   );
   log.info(`Docker container started with ID: ${containerId}`);
   await executeCommand(
@@ -202,7 +177,7 @@ async function stopDockerContainer(containerId) {
     await executeCommand(`docker rm --force ${containerId}`);
     log.info(`Docker container ${containerId} stopped and removed.`);
   } catch (err) {
-    console.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
+    log.error(`Failed to stop Docker container ${containerId}: ${err.message}`);
   }
 }
 
@@ -246,5 +221,5 @@ function parseTrackgenOutput(trackgenOutput) {
 }
 
 if (process.argv[1].includes('simulateTrack.js')) {
-  simulate().catch(err => console.error(`Unhandled error: ${err.message}`));
+  simulate().catch(err => log.error(`Unhandled error: ${err.message}`));
 }

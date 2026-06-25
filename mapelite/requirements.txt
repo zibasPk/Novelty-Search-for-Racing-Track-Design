@@ -1,7 +1,0 @@
-dask[distributed]
-matplotlib
-numpy
-Requests
-ribs
-umap-learn
-shapely

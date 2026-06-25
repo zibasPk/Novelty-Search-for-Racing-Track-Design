@@ -20,7 +20,7 @@ async function writeJsonFile(jsonFilePath, jsonContent) {
   log.debug(`JSON file saved at: ${jsonFilePath}`);
 }
 
-export async function savePointsToJson(name, dataSet, mode = null, selectedCells = [], splineVector = []) {
+export async function savePointsToJson(name, dataSet, mode = null, rngMode, selectedCells = [], splineVector = []) {
   const jsonFileName = `${name}.json`;
   const jsonFilePath = path.join(OUTPUT_DIR_JSON, jsonFileName);
 
@@ -44,6 +44,7 @@ export async function savePointsToJson(name, dataSet, mode = null, selectedCells
       id: name,
       mode: mode,
       trackSize: selectedCells.length,
+      rngMode: rngMode,
       fitness: null,
       dataSet: dataSet.map(point => ({
         x: point.x,
@@ -60,7 +61,7 @@ export async function savePointsToJson(name, dataSet, mode = null, selectedCells
   await writeJsonFile(jsonFilePath, jsonContent);
 }
 
-export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
+export async function saveFitnessToJson(seed, mode, trackSize, rngMode, fitness) {
   // Create a unique suffix using the current timestamp (useful to runs multiple experiments with same unique track/seed)
   const suffix = `${Date.now()}`;
   //Use _${suffix}.json`; to have unique JSON 
@@ -96,6 +97,7 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
     id: seed,
     mode: mode,
     trackSize: trackSize,
+    rngMode: rngMode,
     fitness: {
       length: fitness.length,
       deltaX: fitness.deltaX,
@@ -114,7 +116,12 @@ export async function saveFitnessToJson(seed, mode, trackSize, fitness) {
       gaps_var: fitness.gaps_var,
       left_bends: fitness.left_bends,
       positions_var: fitness.positions_var,
-      curvature_entropy: fitness.curvature_entropy
+      curvature_entropy: fitness.curvature_entropy,
+      embedding_data: fitness.embedding_data,
+      speed_trace: fitness.speed_trace,
+      accel_trace: fitness.accel_trace,
+      steer_trace: fitness.steer_trace,
+      brake_trace: fitness.brake_trace
     },
     // Preserve points data if available.
     dataSet: originalPoints.dataSet || [],
