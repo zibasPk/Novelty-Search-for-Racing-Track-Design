@@ -90,7 +90,7 @@ if __name__ == "__main__":
     SOURCE_DIR = 'data/voronoi/fitted'
 
     # Changed extension to .npz
-    OUTPUT_DIR = 'qd/embeddings/datasets/'
+    OUTPUT_DIR = 'qd/datasets/training_data'
     OUTPUT_NAME = 'dataset20k_mixedRng_tita_canonicized.npz'
 
     # Ensure output directory exists

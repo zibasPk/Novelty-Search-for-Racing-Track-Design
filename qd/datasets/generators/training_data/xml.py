@@ -135,9 +135,9 @@ if __name__ == "__main__":
     XML_SOURCE_DIR = 'data/voronoi/xmlTracks'
     JSON_SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/xml/dataset10k.npz'
+    OUTPUT_NAME = 'qd/datasets/training_data/dataset10k_xml.npz'
 
     # Ensure output directory exists
-    Path('data/datasets/xml').mkdir(parents=True, exist_ok=True)
+    Path('qd/datasets/training_data').mkdir(parents=True, exist_ok=True)
 
     create_dataset(XML_SOURCE_DIR,JSON_SOURCE_DIR, OUTPUT_NAME, 10000)

@@ -105,9 +105,9 @@ def create_flattened_dataset(source_folder, output_file, max_files=None):
 if __name__ == "__main__":
     SOURCE_DIR = 'data/voronoi/fitted'
     # Changed extension to .npz
-    OUTPUT_NAME = 'data/datasets/tsne/dataset4k.npz'
+    OUTPUT_NAME = 'qd/datasets/training_data/dataset4k_spline.npz'
 
     # Ensure output directory exists
-    Path('data/datasets/tsne').mkdir(parents=True, exist_ok=True)
+    Path('qd/datasets/training_data').mkdir(parents=True, exist_ok=True)
 
     create_flattened_dataset(SOURCE_DIR, OUTPUT_NAME, 4000)
