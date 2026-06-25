@@ -1,16 +1,13 @@
-# Quality Diversity for Racing Track Design
+# Novelty Search for Racing Track Design
 
-MSc thesis project to evolve diverse, high‑quality racing tracks with Quality‑Diversity search, run headless sims, and analyze with a data‑driven stack. Take inspiration from the approach; it’s a thesis prototype, not a product. The full methodology, engineering trade‑offs, and TORCS quirks are in the thesis.
+MSc thesis project to evolve diverse, high‑quality racing tracks with Quality‑Diversity search, run headless sims, and analyze with a data‑driven stack.
 
-- [Blog article](https://blog.martino.im/Quality-Diversity-for-Racing-Tracks-Design)
-- [Executive summary](https://blog.martino.im/qd_executive_summary.pdf)
-- [Full thesis](https://blog.martino.im/quality_diversity.pdf)
-- [Live visualizer](https://pcgtrack.netlify.app/)
+Based and forked from the previous work of [martinopiaggi](https://github.com/martinopiaggi), the previous version of the project can be found at: [Quality Diversity for Racing Track Design](https://github.com/martinopiaggi/Quality-Diversity-for-Racing-Track-Design) 
 
 ## What it is
 
 - Quality‑Diversity search (Novelty Search with local competition over an unstructured archive) in a learned behavior space — no hand‑tuned features
-- Behavior descriptors from a **VAE trained on driving telemetry**, finetuned online during the run (AURORA‑style) so the latent space adapts to the tracks being discovered
+- Behavior descriptors from a **VAE trained on driving telemetry**, finetuned online during the run ([AURORA](https://dl.acm.org/doi/abs/10.1145/3321707.3321804)‑style) so the latent space adapts to the tracks being discovered
 - Voronoi and Convex Hull generators (genotype → spline → TORCS XML)
 - Headless, containerized simulations with custom telemetry, parallelized with Dask
 - Web visualizer for real‑time browse/debug
@@ -27,42 +24,36 @@ MSc thesis project to evolve diverse, high‑quality racing tracks with Quality�
 - Analyze: stats, heatmaps, elite track images, t‑SNE grids; export to visualizer
 
 
+## Project layout
+
+- `qd/` — the QD pipeline: `ns.py` / `novelty_search.ipynb` (entry point), `qd_runner.py` (main loop), `emitter.py`, `evaluator.py`, `config.py`, `qd_stats.py`, `archive_visualizer.py`
+- `qd/vae/` — telemetry VAE: model, data, losses, preprocessing, training (used both pretrained and finetuned online)
+- `qd/pretrained_models/` — checkpointed VAEs (telemetry-metrics and XML variants) plus their evaluation notebooks
+- `qd/datasets/` — dataset generators for VAE training data and precomputed embeddings
+- `qd/analysis/` — results analysis notebooks/scripts and concept-figure generators
+- `src/` — Node simulation API (`sim/mapElitesAPI.js`), JS genotype/crossover/mutation code, the TORCS source + Dockerfile, and Python telemetry tools (`sirianni_tools/`)
+- `web/` — the web visualizer (Express server + static front end, deployed to Netlify)
+
+
 ## How to run
 Requires Docker, Python >= 3.12.10 and node >= v24.10.0
 
-1. In root folder:
-    - `pip install -e .[dev]` (to install python dependencies)
-2. In `src` folder:
-    - `docker build -t torcs:dev .` (to build TORCS image)
-    - `npm install` (install dependencies for api)
-    - `node sim/mapElitesAPI.js` (start the track generation/simulation API on port 4242)
-3. To run the algorithm use the notebook `qd/novelty_search.ipynb` or run the script `qd/ns.py`.
-3. Remember to run the api from root with `node src/sim/mapeElitesAPI.js` before running the algorithm.
+1. Install Python dependencies (from the root folder):
+    - `pip install -e .[dev]`
+2. Build the simulation backend (from the `src` folder):
+    - `docker build -t torcs:dev .` (build the TORCS image)
+    - `npm install` (install the simulation API dependencies)
+3. Start the track generation/simulation API (it must be running before the algorithm starts):
+    - from the root folder: `node src/sim/mapElitesAPI.js` (listens on port 4242)
+4. Run the algorithm (from the root folder, so `data/` and `qd/` paths resolve):
+    - run the script `python qd/ns.py`
 
-Runs checkpoint themselves periodically (archive, stats, finetuned VAE) under `data/ns/`; restarting the script resumes from the latest checkpoint automatically. Tunables (iterations, batch size, retraining cadence, novelty threshold, target archive size) live in `qd/config.py`.
+Runs checkpoint themselves periodically (archive, stats, buffer, finetuned VAE) under `data/ns/`; restarting resumes from the latest checkpoint automatically. Tunables (iterations, batch size, retraining cadence, novelty threshold, target archive size, latent/measure dim) live in `qd/config.py`.
 
+### Visualize results
 
-## Borrowable bits
-
-- Voronoi genotype + crossovers (Random‑Line Partitioning, Relative Reconstruction)
-- Normalized overtakes (robust to geometry artifacts)
-- Telemetry‑VAE behavior space with online finetuning + archive remap (no “#turns” features)
-- Self‑tuning novelty threshold to hold a target archive size
-- Per‑sim container pattern for isolation and easy parallelism
-
-## Caveats
-
-- TORCS is dated (no elevation/banking).
-- Per‑sim containers add overhead by design.
-- Metrics need normalization and validity checks.
-
-## Roadmap (ideas to steal)
-
-- Modern engine (Unity/Unreal) for elevation, banking, richer geometry
-- Surrogate models to reduce sim cost
-- Designer‑in‑the‑loop for “fun”/aesthetics
-- Advanced QD (e.g., DCG‑MAP‑Elites), hybrid gradient methods
-- Stronger geometry validity (self‑intersection, curvature/grade limits)
+- **Web visualizer** (real-time browse/debug, same UI as the [live demo](https://pcgtrack.netlify.app/)): from the `web` folder run `npm install` then `npm start` and open `http://localhost:3000`.
+- **Archive plots** (UMAP heatmaps, elite track images, t-SNE grids, finetuning curves): produced automatically during a run and on demand from the analysis notebooks in `qd/analysis/`.
 
 ## License
 
