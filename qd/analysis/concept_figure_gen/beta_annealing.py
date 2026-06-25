@@ -1,7 +1,7 @@
 """Illustrate the cyclical KLD (beta) annealing schedule used when training the VAE.
 
-Run with ``python -m qd.visualizations.beta_annealing``. Produces a PNG in
-``qd/visualizations/plots/beta_annealing/``:
+Run with ``python -m qd.analysis.concept_figure_gen.beta_annealing``. Produces a PNG in
+``data/plots/beta_annealing/``:
 
 - ``beta_annealing.png`` — beta vs. epoch for the base training and fine-tuning
   configs, with the linear warm-up ramp shaded.
@@ -26,7 +26,7 @@ BASE_COLOR = "#e0792e"
 FINETUNE_COLOR = "#2f6f6f"
 RAMP_FACE = "#f7cf8b"
 
-OUT_DIR = os.path.join("qd", "visualizations", "plots", "beta_annealing")
+OUT_DIR = os.path.join("data", "plots", "beta_annealing")
 
 
 def compute_beta(epoch: int, epochs: int, n_cycles: int, max_beta: float, ratio: float) -> float:

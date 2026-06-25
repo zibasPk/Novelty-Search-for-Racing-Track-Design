@@ -13,10 +13,10 @@ Requires the JS API server running on localhost:4242:
     node sim/mapElitesAPI.js   (from the `src` folder)
 
 Run (uses the SEEDS list, or pass seeds as args):
-    python qd/visualizations/simplex_vs_uniform_points.py
-    python qd/visualizations/simplex_vs_uniform_points.py 42 123 999
+    python qd/analysis/concept_figure_gen/simplex_vs_uniform_points.py
+    python qd/analysis/concept_figure_gen/simplex_vs_uniform_points.py 42 123 999
 
-Produces, per seed, in plots/simplex_vs_uniform (seed in the filename):
+Produces, per seed, in data/plots/simplex_vs_uniform (seed in the filename):
     simplex_vs_uniform_points_seed<n>.png    (level 1 — points only)
     simplex_vs_uniform_voronoi_seed<n>.png   (level 2 — points + Voronoi cells)
     simplex_vs_uniform_track_seed<n>.png      (level 3 — + overlaid track)
@@ -29,8 +29,7 @@ import matplotlib.pyplot as plt
 import requests
 
 BASE_URL = "http://localhost:4242"
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "plots", "simplex_vs_uniform")
+OUT_DIR = os.path.join("data", "plots", "simplex_vs_uniform")
 BBOX = {"xl": 0, "xr": 600, "yt": 0, "yb": 600}
 
 # rngMode values mirror src/utils/constants.js -> RngMode

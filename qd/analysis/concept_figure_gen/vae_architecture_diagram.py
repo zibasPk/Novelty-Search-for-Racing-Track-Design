@@ -1,8 +1,8 @@
 """Render schematic diagrams of the MetricsVAE Circular-CNN architecture.
 
-Run directly with ``python qd/visualizations/vae_architecture_diagram.py``
+Run directly with ``python qd/analysis/concept_figure_gen/vae_architecture_diagram.py``
 (or ``python vae_architecture_diagram.py`` from this folder). Produces
-several PNGs in ``qd/visualizations/plots/``:
+several PNGs in ``data/plots/vae_architecture/``:
 
 - ``qd_pipeline.png``         — whole unsupervised QD loop (AURORA-style)
 - ``vae_architecture.png``   — full encoder/decoder pipeline overview
@@ -22,8 +22,8 @@ from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, PathPatc
 from matplotlib.path import Path as MplPath
 
 # Allow running this file directly (not as ``python -m ...``) by putting the
-# project root — three levels up from qd/visualizations/ — on the import path.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+# project root — three levels up from qd/analysis/concept_figure_gen/ — on the import path.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 from qd.vae.config import MODEL_CONFIG
 
@@ -42,7 +42,7 @@ DECODER_FACE = "#bfe0e6"
 OUTPUT_FACE = "#caa6d8"
 NORM_FACE = "#e3e3e3"
 
-OUT_DIR = os.path.join("qd", "visualizations", "plots", "vae_architecture")
+OUT_DIR = os.path.join("data", "plots", "vae_architecture")
 
 
 def shade(color, factor):

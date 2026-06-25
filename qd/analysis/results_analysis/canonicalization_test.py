@@ -2,10 +2,10 @@
 Visual test for track winding canonicalization.
 
 Requires the JS API server to be running on localhost:4242.
-Run:  python -m qd.tests.test_canonicalization_visual
-      (or just: python qd/tests/test_canonicalization_visual.py)
+Run:  python -m qd.analysis.concept_figure_gen.canonicalization_1
+      (or just: python qd/analysis/concept_figure_gen/canonicalization_1.py)
 
-Produces two PNG files in the same directory:
+Produces two PNG files in data/plots/canonicalization:
   - canon_mirror_test.png   — mirrored tracks must converge to the same shape
   - canon_direction_test.png — reversed (forward/backward) tracks must remain distinct
 """
@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import requests
 
 BASE_URL = "http://localhost:4242"
-OUT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join("data", "plots", "canonicalization")
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -233,6 +233,7 @@ if __name__ == "__main__":
         print(f"ERROR: Cannot reach {BASE_URL}. Start the JS API first (npm start).")
         sys.exit(1)
 
+    os.makedirs(OUT_DIR, exist_ok=True)
     mirror_ok = test_mirror_invariance()
     test_direction_preserved()
     sys.exit(0 if mirror_ok else 1)

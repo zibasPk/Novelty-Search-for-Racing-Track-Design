@@ -17,12 +17,12 @@ Requires the JS API server running on localhost:4242:
     node sim/mapElitesAPI.js   (from the `src` folder)
 
 Run (uses the default seeds/sizes, or override positionally):
-    python qd/visualizations/mutation_crossover.py
-    python qd/visualizations/mutation_crossover.py 42 123 777
+    python qd/analysis/concept_figure_gen/mutation_crossover.py
+    python qd/analysis/concept_figure_gen/mutation_crossover.py 42 123 777
     # mut_seed  cx_seed_a cx_seed_b  cx_size_a cx_size_b
-    python qd/visualizations/mutation_crossover.py 42 123 777 5 9
+    python qd/analysis/concept_figure_gen/mutation_crossover.py 42 123 777 5 9
 
-Produces in plots/mutation_crossover:
+Produces in data/plots/mutation_crossover:
     mutation.png    parent  -> mutant
     crossover.png   parent A + parent B -> offspring
 """
@@ -34,8 +34,7 @@ import matplotlib.pyplot as plt
 import requests
 
 BASE_URL = "http://localhost:4242"
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "plots", "mutation_crossover")
+OUT_DIR = os.path.join("data", "plots", "mutation_crossover")
 BBOX = {"xl": 0, "xr": 600, "yt": 0, "yb": 600}
 
 MODE = "voronoi"

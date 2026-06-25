@@ -14,10 +14,10 @@ reconstructions for each of the three features.
 
 Run from the repository root:
 
-    python -m qd.data_analysis.reconstruction_quality_elites
-    python -m qd.data_analysis.reconstruction_quality_elites --n-tracks 8 --seed 67
-    python -m qd.data_analysis.reconstruction_quality_elites --model data/ns/checkpoints/finetuned_model_1100.pt
-    python -m qd.data_analysis.reconstruction_quality_elites --initial-model qd/embeddings/models/...pth
+    python -m qd.analysis.results_analysis.reconstruction_quality_elites
+    python -m qd.analysis.results_analysis.reconstruction_quality_elites --n-tracks 8 --seed 67
+    python -m qd.analysis.results_analysis.reconstruction_quality_elites --model data/ns/checkpoints/finetuned_model_1100.pt
+    python -m qd.analysis.results_analysis.reconstruction_quality_elites --initial-model qd/embeddings/models/...pth
 """
 
 import argparse

@@ -14,8 +14,8 @@ the prior.
 
 Run from the repository root:
 
-    python -m qd.data_analysis.latent_health_check_elites
-    python -m qd.data_analysis.latent_health_check_elites --model data/ns/checkpoints/finetuned_model_1100.pt
+    python -m qd.analysis.results_analysis.latent_health_check_elites
+    python -m qd.analysis.results_analysis.latent_health_check_elites --model data/ns/checkpoints/finetuned_model_1100.pt
 """
 
 import argparse
