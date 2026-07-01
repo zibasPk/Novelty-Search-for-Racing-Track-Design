@@ -21,7 +21,7 @@ Based and forked from the previous work of [martinopiaggi](https://github.com/ma
 - Behavior space: a VAE encodes each track's telemetry sequence into a latent descriptor (32‑dim)
 - Archive: pyribs `ProximityArchive` — a solution enters if it is novel enough (k‑NN distance over descriptors) or beats its nearest neighbors (local competition)
 - Online retraining: every N iterations the VAE is finetuned on evaluated tracks, all elite descriptors are recomputed, the archive is remapped (novelty‑filtered) and the novelty threshold is auto‑tuned toward a target archive size (CSC controller from Grillotti & Cully, 2022)
-- Analyze: stats, heatmaps, elite track images, t‑SNE grids; export to visualizer
+- Analyze: stats, elite track images, t‑SNE grids; export to visualizer
 
 
 ## Project layout
@@ -53,7 +53,7 @@ Runs checkpoint themselves periodically (archive, stats, buffer, finetuned VAE) 
 ### Visualize results
 
 - **Web visualizer** (real-time browse/debug, same UI as the [live demo](https://pcgtrack.netlify.app/)): from the `web` folder run `npm install` then `npm start` and open `http://localhost:3000`.
-- **Archive plots** (UMAP heatmaps, elite track images, t-SNE grids, finetuning curves): produced automatically during a run and on demand from the analysis notebooks in `qd/analysis/`.
+- **Archive plots** (stats, elite track images, finetuning curves): produced automatically during a run. Additional analyses (UMAP heatmaps, t-SNE grids) are available on demand from the analysis notebooks in `qd/analysis/`.
 
 ## License
 

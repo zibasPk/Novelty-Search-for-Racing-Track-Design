@@ -15,7 +15,7 @@ qd/first_test/
 src/data/tests/
 __pycache__/
 
-data/archive/
+data/
 
 *.mp4
 *.xml
@@ -24,6 +24,5 @@ data/archive/
 *.pkl
 
 *.png
-*.npz
 
 *.egg-info

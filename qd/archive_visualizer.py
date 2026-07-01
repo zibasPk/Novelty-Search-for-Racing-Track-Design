@@ -5,7 +5,6 @@ from qd.utils import array_to_solution
 from qd.config import (
     BASE_URL,
     INVALID_SCORE,
-    PRECOMPILED_EMBEDDINGS_PATH,
     RETRAIN_EVERY
 )
 from matplotlib.colors import LinearSegmentedColormap
@@ -17,7 +16,6 @@ import re
 import json
 import datetime
 from io import BytesIO
-import umap
 import requests
 from qd.logging_config import get_logger
 
@@ -35,245 +33,20 @@ class ArchiveVisualizer:
         The QD archive to visualize.
     stats : list[dict]
         Stats list produced by ``QDRunner.run``.
-    heatmap_dir : str
-        Directory to save UMAP heatmap PNGs.
-    gridplot_dir : str
-        Directory to save grid plot PNGs.
+    images_dir : str, optional
+        Directory to save exported elite track images.
     seed : int, optional
-        Random seed for UMAP reproducibility.
+        Random seed for reproducibility.
     """
 
-    def __init__(self, archive, stats, heatmap_dir, gridplot_dir, images_dir=None, grid_state=None, seed=None, precomp_embeddings_path=PRECOMPILED_EMBEDDINGS_PATH):
+    def __init__(self, archive, stats, images_dir=None, seed=None):
         self.archive = archive
         self.stats = stats
-        self.heatmap_dir = heatmap_dir
-        self.gridplot_dir = gridplot_dir
         self.images_dir = images_dir
         self.seed = seed
         self._track_cache: dict = {}
 
-        embeddings = np.load(precomp_embeddings_path)["embeddings"]
-        umap_m = umap.UMAP(n_components=2, random_state=seed)
-        self._umap_model = umap_m.fit(embeddings)
-        self._precomp_umaps = umap_m.transform(embeddings)
-
-        self._grid_state = grid_state if grid_state is not None else []
-        self.prev_iteration_data = None
-
-    @property
-    def grid_state(self):
-        return self._grid_state
-
-    def reset_grid_state(self):
-        """Clear the grid state after an archive remap.
-
-        Should be called whenever the archive is cleared and rebuilt (e.g. after
-        VAE retraining), so that ``plot_grid`` starts a fresh layout that matches
-        the new insertion order rather than the stale pre-remap slots.
-        The ``_track_cache`` is intentionally *not* cleared here — the same
-        solution IDs are re-added after remapping, so cached track outlines
-        remain valid and avoid redundant API calls.
-        """
-        self._grid_state.clear()
-
     # -- track outline helper -------------------------------------------------
-    def plot_grid(self, iteration_idx=None, substitutions=None, max_cols=15, max_sub_color=20,
-              max_rows=None, save_dir=None):
-        """Render archive buckets as a 2D grid colored by substitution count.
-
-        Parameters
-        ----------
-        iteration_idx : int, optional
-            Current iteration number, used only for the plot title.
-        substitutions : list of (old_sol_dict, new_sol_dict), optional
-            Substitution pairs returned by ``_track_add_status``.
-        max_cols : int
-            Fixed number of columns in the grid.
-        max_sub_color : int
-            Fixed upper bound for the colorbar (substitution count).
-        max_rows : int, optional
-            Fixed number of rows.  ``None`` → derived from current grid state size.
-        save_dir : str, optional
-            Directory where the figure should be saved.  Falls back to
-            ``self.gridplot_dir`` if *None*.
-        """
-        if save_dir is None:
-            save_dir = self.gridplot_dir
-
-        if substitutions is None:
-            substitutions = []
-
-
-        archive = self.archive
-        elites_dicts = [array_to_solution(sol) for sol in archive.data("solution")]
-        id_to_fitness = dict(zip((sol_dict["id"] for sol_dict in elites_dicts), archive.data("objective")))
-
-        in_grid = lambda id: any(item["elite"]["id"] == id for item in self._grid_state)
-        is_substitution = lambda id: any(item[1]["id"] == id for item in substitutions)
-
-
-        # Add new elites that aren't already tracked and aren't replacing an existing slot
-        for elite in elites_dicts:
-            if not in_grid(elite["id"]) and not is_substitution(elite["id"]):
-                self._grid_state.append({
-                    "elite": elite,
-                    "sub_count": 0,
-                    "new": True,
-                    "fitness": id_to_fitness.get(elite["id"], np.nan)
-                })
-
-        # Apply substitutions, in-place preserving grid position
-        for prev_sol, new_sol in substitutions:
-            for item in self._grid_state:
-                if item["elite"]["id"] == prev_sol["id"]:
-                    item["elite"] = new_sol
-                    item["sub_count"] += 1
-                    item["fitness"] = id_to_fitness.get(new_sol["id"], np.nan)
-                    item["new"] = True
-                    break
-            else:
-                # Expected right after an archive remap: `_remap_archive` re-adds
-                # elites directly via `archive.add()` (bypassing grid-state
-                # tracking) after `reset_grid_state()`, so a remap-inserted elite
-                # that gets substituted in the very next `tell()` has no slot to
-                # update in place. Give the winner a fresh slot instead of
-                # dropping it (which would also surface as a later "Elite in
-                # archive not found in grid state" error).
-                log.debug("Substitution target not found in grid state — adding new entry instead",
-                            target_id=prev_sol["id"], new_id=new_sol["id"])
-                self._grid_state.append({
-                    "elite": new_sol,
-                    "sub_count": 0,
-                    "new": True,
-                    "fitness": id_to_fitness.get(new_sol["id"], np.nan)
-                })
-
-        if len(self._grid_state) == 0:
-            return
-
-        # check if all elites in gridstate are still in the archive;
-        archive_ids = set(sol_dict["id"] for sol_dict in elites_dicts)
-        for item in self._grid_state:
-            if item["elite"]["id"] not in archive_ids:
-                log.error("Elite in grid state no longer in archive",
-                            elite_id=item["elite"]["id"])
-
-        # check if all elites in archive are in gridstate;
-        for elite in elites_dicts:
-            if not in_grid(elite["id"]):
-                log.error("Elite in archive not found in grid state",
-                            elite_id=elite["id"])
-
-        grid_state_ids_sub_counts = [(item["elite"]["id"], item["sub_count"]) for item in self._grid_state]
-
-        # ── Fixed grid dimensions ──
-        cols = max_cols
-        total = len(self._grid_state)
-        if max_rows is None:
-            max_rows = max(1, int(np.ceil(total / cols)))
-
-        # Build grid of substitution counts; NaN = unfilled cell
-        grid = np.full((max_rows, cols), np.nan)
-        for pos, item in enumerate(self._grid_state):
-            r, c = divmod(pos, cols)
-            if r < max_rows:
-                grid[r, c] = item["sub_count"]
-
-        cmap = LinearSegmentedColormap.from_list("sub", ["white", "#ffff00", "red"])
-        cmap.set_bad("lightgray")
-
-        fig_w = max(6, cols * 0.6)
-        fig_h = max(4, max_rows * 0.6)
-        fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-
-        im = ax.imshow(grid, cmap=cmap, vmin=0, vmax=max_sub_color,
-                    aspect="equal", interpolation="nearest",
-                    origin="upper",
-                    extent=(-0.5, cols - 0.5, max_rows - 0.5, -0.5))
-
-        plt.colorbar(im, ax=ax, label="Substitution Count", fraction=0.046, pad=0.04)
-
-        # ── Draw track outlines and annotations ──
-        for pos, item in enumerate(self._grid_state):
-            r, c = divmod(pos, cols)
-            if r >= max_rows:
-                break
-
-            elite = item["elite"]
-            count = item["sub_count"]
-            is_new = item["new"]
-
-            # Track outline
-            outline = self._get_track_outline(elite)
-            if outline is not None:
-                xs, ys = outline
-                xspan = xs.max() - xs.min()
-                yspan = ys.max() - ys.min()
-                if xspan > 1e-6 and yspan > 1e-6:
-                    pad = 0.1
-                    xs_n = (xs - xs.min()) / xspan
-                    ys_n = (ys - ys.min()) / yspan
-                    cell_xs = c - (0.5 - pad) + xs_n * (1.0 - 2 * pad)
-                    cell_ys = r - (0.5 - pad) + ys_n * (1.0 - 2 * pad)
-                    track_color = "blue" if is_new else "black"
-                    track_lw = 0.9 if is_new else 0.4
-                    ax.plot(cell_xs, cell_ys, color=track_color,
-                            linewidth=track_lw, alpha=0.55, zorder=2)
-
-            # Substitution count (top-left)
-            if count > 0:
-                ax.text(c - 0.42, r - 0.40, str(count),
-                        ha="left", va="top", fontsize=5, zorder=3,
-                        color="black" if count < max_sub_color * 0.6 else "white")
-
-            # Fitness score (bottom-right)
-            fit_val = item.get("fitness")
-            if fit_val is not None:
-                if np.isfinite(fit_val) and fit_val != INVALID_SCORE:
-                    ax.text(c + 0.44, r + 0.44, f"{fit_val:.1f}",
-                            ha="right", va="bottom", fontsize=4, zorder=3, color="blue")
-                elif fit_val == INVALID_SCORE:
-                    ax.text(c + 0.44, r + 0.44, "X",
-                            ha="right", va="bottom", fontsize=5, zorder=3,
-                            color="red", fontweight="bold")
-            else:
-                log.warning("Elite missing fitness for grid annotation", elite_id=elite["id"])
-
-        ax.set_xticks(np.arange(-0.5, cols, 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, max_rows, 1), minor=True)
-        ax.grid(which="minor", color="gray", linewidth=0.5)
-        ax.tick_params(which="both", bottom=False, left=False,
-                    labelbottom=False, labelleft=False)
-        ax.set_xlim(-0.5, cols - 0.5)
-        ax.set_ylim(max_rows - 0.5, -0.5)
-
-        it_label = iteration_idx if iteration_idx is not None else len(self.stats) - 1
-        ax.set_title(f"Archive Grid — Iteration {it_label}  "
-                    f"({total} / {max_rows * cols} buckets filled)")
-
-        plt.tight_layout()
-
-        # save grid_state_ids_sub_counts json for this iteration
-
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
-            fig.savefig(os.path.join(save_dir, f"archive_grid_iter_{it_label:04d}.png"),
-                        dpi=200, bbox_inches="tight")
-            plt.close(fig)
-
-            grid_save_path = os.path.join(save_dir, f"grid_state_ids_iter_{it_label:04d}.json")
-            with open(grid_save_path, "w") as f:
-                json.dump(grid_state_ids_sub_counts, f, indent=2)
-        else:
-            plt.show()
-            plt.close(fig)
-
-        # Mark all entries as no longer new for the next call
-        for item in self._grid_state:
-            item["new"] = False
-
-
-
     def _get_track_outline(self, sol_dict):
         """Call /reconstruct for *sol_dict* and return ``(xs, ys)`` float arrays.
 
@@ -441,64 +214,6 @@ class ArchiveVisualizer:
 
         log.info("Elite track images saved", count=len(outlines),
                  total=len(elites_dicts), path=iter_dir)
-
-    def plot_heatmap(self, iteration, save_dir=None):
-        """2D UMAP compression of the archive's behavioural space, colored by fitness."""
-        MAX_FIT = 60
-        MIN_FIT = 0
-        if save_dir is None:
-            save_dir = self.heatmap_dir
-        archive_data = self.archive.data()
-        embeddings = archive_data["measures"]
-        fitnesses = archive_data["objective"]
-        min_samples = 16
-        if len(embeddings) < min_samples:
-            return
-        solutions = archive_data["solution"]
-        solution_dicts = [array_to_solution(sol) for sol in solutions]
-        umap_compression = self._umap_model.transform(embeddings)
-        fitnesses = np.asarray(fitnesses)
-        cmap = plt.get_cmap("viridis").copy()
-        cmap.set_under("deeppink")
-        cmap.set_over("red")
-        os.makedirs(save_dir, exist_ok=True)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        # ── Background: full precomputed UMAP landscape ──────────────────────────
-        ax.scatter(
-            self._precomp_umaps[:, 0],
-            self._precomp_umaps[:, 1],
-            c="lightgray",
-            s=3,
-            alpha=0.30,
-            linewidths=0,
-            zorder=1,
-            label="All candidates",
-        )
-        # ── Foreground: current archive elites ───────────────────────────────────
-        sc = ax.scatter(
-            umap_compression[:, 0], umap_compression[:, 1],
-            c=fitnesses, cmap=cmap, s=10, vmin=MIN_FIT, vmax=MAX_FIT,
-            zorder=2,
-        )
-        plt.colorbar(sc, ax=ax, label="Fitness", extend="both")
-
-        # ── Bounds: fit to _precomp_umaps, expanding if archive elites exceed them ─
-        x_min = min(self._precomp_umaps[:, 0].min(), umap_compression[:, 0].min())
-        x_max = max(self._precomp_umaps[:, 0].max(), umap_compression[:, 0].max())
-        y_min = min(self._precomp_umaps[:, 1].min(), umap_compression[:, 1].min())
-        y_max = max(self._precomp_umaps[:, 1].max(), umap_compression[:, 1].max())
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-
-        # ── Title with iteration number ───────────────────────────────────────────
-        ax.set_title(f"Archive Heatmap — Iteration {iteration}")
-
-        plt.tight_layout()
-        fig.savefig(os.path.join(
-            save_dir, f"archive_heatmap_iter_{iteration:04d}.png"))
-        plt.close(fig)
-        np.savez_compressed(os.path.join(save_dir, f"archive_data_iter_{iteration:04d}.npz"),
-                            umap=umap_compression, fitness=fitnesses, solutions=solution_dicts)
 
     # -- stats plot -----------------------------------------------------------
 

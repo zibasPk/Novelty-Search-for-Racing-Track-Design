@@ -174,8 +174,8 @@ class QDRunner:
         Dask distributed client for parallel evaluation.
     evaluator_future : dask Future
         Evaluator scattered to all Dask workers.
-    checkpoint_dir, heatmap_dir, gridplot_dir : str
-        Output directories for checkpoints and plots.
+    checkpoint_dir : str
+        Output directory for checkpoints.
     stats_path : str
         Path to the pickled stats file.
     buffer_path : str, optional
@@ -189,15 +189,12 @@ class QDRunner:
         scheduler,
         archive,
         checkpoint_dir,
-        heatmap_dir,
-        gridplot_dir,
         pretrained_model_path=None,
         finetune=False,
         start_iter=DEFAULT_START_ITER,
         buffer_path=None,
         seed=None,
         stats=None,
-        grid_state=None
     ):
         self.scheduler = scheduler
         self.archive = archive
@@ -208,8 +205,6 @@ class QDRunner:
         self.start_iter = start_iter
 
         self.checkpoint_dir = checkpoint_dir
-        self.heatmap_dir = heatmap_dir
-        self.gridplot_dir = gridplot_dir
         self.buffer_path = buffer_path or os.path.join(
             BUFFER_DIR, "buffer.json")
         self.images_dir = os.path.join(NS_DIR, IMAGES_DIR)
@@ -223,7 +218,7 @@ class QDRunner:
         # Evaluation buffer & visualizer
         self._evaluation_buffer = EvaluationBuffer(self.buffer_path)
         self._visualizer = ArchiveVisualizer(
-            archive, self.stats, heatmap_dir, gridplot_dir, images_dir=self.images_dir, seed=seed, grid_state=grid_state)
+            archive, self.stats, images_dir=self.images_dir, seed=seed)
 
         self._embedding_model = None
         if finetune:
@@ -318,7 +313,7 @@ class QDRunner:
         return paths[-1] if paths else None
 
     @classmethod
-    def load_state(cls, state, pretrained_model_path, checkpoint_dir, heatmap_dir, gridplot_dir, buffer_path, seed, do_retraining=False):
+    def load_state(cls, state, pretrained_model_path, checkpoint_dir, buffer_path, seed, do_retraining=False):
         # If the run already went through a retraining cycle, resume with the
         # finetuned VAE that produced the checkpointed archive's measures —
         # not the original pretrained model.
@@ -334,11 +329,8 @@ class QDRunner:
             stats=state["stats"],
             pretrained_model_path=pretrained_model_path,
             checkpoint_dir=checkpoint_dir,
-            heatmap_dir=heatmap_dir,
-            gridplot_dir=gridplot_dir,
             buffer_path=buffer_path,
             seed=seed,
-            grid_state=state["stats"][-1].get("grid_state", None),
             finetune=do_retraining
         )
         return instance
@@ -535,12 +527,6 @@ class QDRunner:
                 batch_best=batch_best,
                 num_evaluated=len(sol_dicts),
             )
-            if not self.do_finetune:
-                self._visualizer.plot_heatmap(i)
-                self._visualizer.plot_grid(i, substitution_dicts)
-
-                # Save plot_grid in stats
-                self.stats[-1]["grid_state"] = self._visualizer.grid_state.copy()
 
             # Checkpoint, always at the end of the loop
             if i % CHECKPOINT_EVERY == 0 and i != start_iter:
@@ -636,7 +622,6 @@ class QDRunner:
         )
 
         self.archive.clear()
-        self._visualizer.reset_grid_state()
 
         with self._track_add_status() as (new_insertions, substitutions):
             self.archive.add(sol_to_add, obj_to_add, measure_to_add)
